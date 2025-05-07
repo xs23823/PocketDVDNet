@@ -23,12 +23,14 @@ class Trainer:
         self.device = next(model.parameters()).device
         self.epoch = start_epoch
         self.iteration = 0
+        self.best_acc = 0
+        self.is_best = False
 
         # setup optimizers and schedulers
         self.setup_optimizers()
         self.setup_schedulers()
         self.scaler = torch.amp.GradScaler("cuda")
-        # self.load()
+        self.load()
 
         self.current_lr = self.get_lr()
         self.criterion = nn.MSELoss(reduction="sum")
@@ -76,11 +78,12 @@ class Trainer:
             )
 
         else:
-
+            # Default to StepLR
+            print(
+                f"Scheduler {scheduler_type} is not recognized. Defaulting to StepLR."
+            )
             self.scheduler = StepLR(self.optimizer, step_size=1, gamma=self.args.gamma)
-            # raise NotImplementedError(
-            #     f"Scheduler {scheduler_type} is not implemented yet."
-            # )
+
 
     def update_learning_rate(self):
         """Update learning rate."""
@@ -103,82 +106,47 @@ class Trainer:
     def load(self):
         """Load Model and Optimizer."""
 
-        if os.path.isfile(os.path.join(self.args.out_dir, "latest.ckpt")):
-            latest_epoch = (
-                open(os.path.join(self.args.out_dir, "latest.ckpt"), "r")
-                .read()
-                .splitlines()[-1]
-            )
+        if os.path.isfile(os.path.join(self.args.out_dir, "latest.pt")):
+            ckpt = torch.load(os.path.join(self.args.out_dir, "latest.pt"), map_location=self.device)
+            latest_epoch = ckpt.get("epoch", None)
         else:
-            ckpts = [
-                os.path.basename(i).split(".pth")[0]
-                for i in glob.glob(os.path.join(self.args.out_dir, "*.pth"))
-            ]
-            ckpts.sort()
-            latest_epoch = ckpts[-1][4:] if len(ckpts) > 0 else None
+            latest_epoch = None
 
         if latest_epoch is not None:
-            model_path = os.path.join(
-                self.args.out_dir, f"model_{int(latest_epoch):06d}.pth"
-            )
-            opt_path = os.path.join(
-                self.args.out_dir, f"opt_{int(latest_epoch):06d}.pth"
-            )
+            model_path = os.path.join(self.args.out_dir, f"latest.pt")
+            print(f"Loading model epoch {latest_epoch} from {model_path}")
 
-            print(f"Loading model from {model_path}")
-            model_data = torch.load(model_path, map_location=self.device)
-            self.model.load_state_dict(model_data)
+            ckpt = torch.load(model_path, map_location=self.device)
+            self.epoch = ckpt["epoch"]
+            self.iteration = ckpt["iteration"]
+            self.model.load_state_dict(ckpt["model_state"])
+            self.optimizer.load_state_dict(ckpt["optim_state"])
+            self.scheduler.load_state_dict(ckpt["sched_state"])
 
-            data_opt = torch.load(opt_path, map_location=self.device)
-            self.optimizer.load_state_dict(data_opt["optimG"])
-
-            self.epoch = data_opt["epoch"]
-            self.iteration = data_opt["iteration"]
         else:
-            model_path = getattr(self.args, "model_path", None)
-            opt_path = getattr(self.args, "opt_path", None)
-            if model_path is not None:
-                print(f"Loading Gen-Net from {model_path}")
-                model_data = torch.load(model_path, map_location=self.device)
-                self.model.load_state_dict(model_data)
+            print("Training from scratch!")
 
-                if opt_path is not None:
-                    data_opt = torch.load(opt_path, map_location=self.device)
-                    self.optimizer.load_state_dict(data_opt["optimG"])
-                    self.scheduler.load_state_dict(data_opt["scheduler"])
+    def save(self):
+        """Save latest checkpoint and, if flagged, update best checkpoint."""
+        # bundle everything into one dict
+        ckpt = {
+            "epoch": self.epoch,
+            "iteration": self.iteration,
+            "model_state": self.model.state_dict(),
+            "optim_state": self.optimizer.state_dict(),
+            "sched_state": self.scheduler.state_dict(),
+        }
 
-            else:
-                print(
-                    "Warning: There is no trained model found by trainer.py. A randomly initialized model will be used."
-                )
+        # always overwrite latest.pt
+        latest_path = os.path.join(self.args.out_dir, "latest.pt")
+        torch.save(ckpt, latest_path)
+        print(f"Saved latest checkpoint to {latest_path}")
 
-    def save(self, it):
-        """Save parameters every eval_epoch"""
-        # argsure path
-        model_path = os.path.join(self.args.out_dir, f"model_{it:06d}.pth")
-        opt_path = os.path.join(self.args.out_dir, f"opt_{it:06d}.pth")
-        print(f"Saving model to {model_path} ")
-
-        # # remove .module for saving
-        # if hasattr(self.model, "module"):
-        #     model = self.model.module
-        # else:
-        #     model = self.model
-
-        # save checkpoints
-        torch.save(self.model.state_dict(), model_path)
-        torch.save(
-            {
-                "epoch": self.epoch,
-                "iteration": self.iteration,
-                "optimG": self.optimizer.state_dict(),
-                "scheduler": self.scheduler.state_dict(),
-            },
-            opt_path,
-        )
-
-        latest_path = os.path.join(self.args.out_dir, "latest.ckpt")
-        os.system(f"echo {it:06d} > {latest_path}")
+        # if this is the best so far, also overwrite best.pt
+        if self.is_best:
+            best_path = os.path.join(self.args.out_dir, "best.pt")
+            torch.save(ckpt, best_path)
+            print(f"Saved best checkpoint to   {best_path}")
 
     def train(self):
 
@@ -191,6 +159,8 @@ class Trainer:
             self.train_epoch(pbar)
             self.validate()
             self.update_learning_rate()
+            if self.epoch % self.args.save_freq == 0:
+                self.save()
 
         pbar.close()
         tqdm.write("\nTraining complete.")
@@ -263,6 +233,9 @@ class Trainer:
                     dim=1, keepdim=True
                 )  # get the index of the max log-probability
                 correct += pred.eq(target.view_as(pred)).sum().item()
+
+        self.best_acc = max(correct / len(self.val_loader.dataset), self.best_acc)
+        self.is_best = correct >= self.best_acc
 
         test_loss /= len(self.val_loader.dataset)
 

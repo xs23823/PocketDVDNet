@@ -1,0 +1,25 @@
+# configs/net.yaml
+
+# Configuration for FastDVDNet
+batch_size:      64    
+test_batch_size: 1000  
+epochs:          14    
+lr:              1e-3  
+gamma:           0.7   
+
+no_accel:   false      
+dry_run:    false      
+save_freq:  2
+
+seed:         1        
+
+out_dir: "./out"
+iterations: 2000
+num_workers: 0
+num_prefetch_queue: 8
+log_freq: 10
+
+scheduler:
+  name: "StepLR"
+  step_size: 1
+  gamma: 0.7

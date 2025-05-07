@@ -2,21 +2,21 @@
 
 # Configuration for PyTorch MNIST Example
 
-batch_size:      64    # input batch size for training (default: 64)
-test_batch_size: 1000  # input batch size for testing (default: 1000)
-epochs:          14    # number of epochs to train (default: 14)
-lr:              1.0   # learning rate (default: 1.0)
-gamma:           0.7   # learning rate step gamma (default: 0.7)
+batch_size:      64   
+test_batch_size: 1000 
+epochs:          14   
+lr:              1.0  
+gamma:           0.7  
 
-no_accel:   false       # disables accelerator
-dry_run:    false       # quickly check a single pass
-save_model: false       # for saving the current model
+no_accel:   false     
+dry_run:    false     
+save_freq:  1
 
-seed:         1         # random seed (default: 1)
-log_interval: 10        # how many batches to wait before logging training status
+seed:         1       
+log_interval: 10      
 
 out_dir: "./out"
-iterations: 2000
+iterations: 20000
 num_workers: 0
 num_prefetch_queue: 8
 log_freq: 10
@@ -25,5 +25,3 @@ scheduler:
   name: "StepLR"
   step_size: 1
   gamma: 0.7
-
-verbose: false
