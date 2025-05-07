@@ -185,16 +185,15 @@ class Trainer:
         pbar = range(int(self.args.iterations))
         pbar = tqdm(pbar, initial=self.iteration, dynamic_ncols=True, smoothing=0.01)
 
-        while True:
+        while self.iteration < self.args.iterations:
             self.epoch += 1
             self.prefetcher.reset()
             self.train_epoch(pbar)
             self.validate()
             self.update_learning_rate()
-            if self.iteration > self.args.iterations:
-                break
 
-        print("\nTraining complete.")
+        pbar.close()
+        tqdm.write("\nTraining complete.")
 
     def train_epoch(self, pbar):
         """
@@ -202,7 +201,7 @@ class Trainer:
         """
 
         self.model.train()
-        print(f"Training epoch {self.epoch}...")
+        tqdm.write(f"Training epoch {self.epoch}...")
 
         while True:
             batch = self.prefetcher.next()
@@ -233,17 +232,15 @@ class Trainer:
                 self.current_lr = self.get_lr()
                 pbar.set_description((f"LR: {self.current_lr} Loss: {loss.item():.3f}"))
 
-            if self.iteration > self.args.iterations:
-                break
 
         # Clean up
         torch.cuda.empty_cache()
 
-        print(
-            "Train Epoch: {} [{}/{} ({:.0f}%)]\tLoss: {:.6f}".format(
+        tqdm.write(
+            "Train Epoch: {} [{}/{} ({:.0f}%)] - [Loss: {:.6f}]".format(
                 self.epoch,
                 self.iteration,
-                len(self.prefetcher),
+                self.args.iterations,
                 100.0, #* batch_idx / len(train_loader),
                 loss.item(),
             )
@@ -269,8 +266,8 @@ class Trainer:
 
         test_loss /= len(self.val_loader.dataset)
 
-        print(
-            "\nTest set: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n".format(
+        tqdm.write(
+            "Validation Results: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n".format(
                 test_loss,
                 correct,
                 len(self.val_loader.dataset),

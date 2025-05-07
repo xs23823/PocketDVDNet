@@ -77,7 +77,7 @@ def main(args):
     model = Net().to(device)
 
     trainer = Trainer(args, model, prefetcher, val_loader)
-    trainer.train()
+    torch.compile(trainer.train(), mode="default")
 
 
 if __name__ == '__main__':

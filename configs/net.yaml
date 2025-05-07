@@ -16,7 +16,7 @@ seed:         1         # random seed (default: 1)
 log_interval: 10        # how many batches to wait before logging training status
 
 out_dir: "./out"
-iterations: 100000
+iterations: 2000
 num_workers: 0
 num_prefetch_queue: 8
 log_freq: 10
@@ -25,3 +25,5 @@ scheduler:
   name: "StepLR"
   step_size: 1
   gamma: 0.7
+
+verbose: false
