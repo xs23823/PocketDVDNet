@@ -11,6 +11,8 @@ from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import StepLR
 from utils.lr_scheduler import MultiStepRestartLR, CosineAnnealingRestartLR
 
+from dataloaders.fastdvdnet.utils import svd_orthogonalization, normalize_augment
+
 
 class Trainer:
     def __init__(self, args, model, prefetcher, val_loader, start_epoch=0):
@@ -84,7 +86,6 @@ class Trainer:
             )
             self.scheduler = StepLR(self.optimizer, step_size=1, gamma=self.args.gamma)
 
-
     def update_learning_rate(self):
         """Update learning rate."""
         self.scheduler.step()
@@ -107,7 +108,9 @@ class Trainer:
         """Load Model and Optimizer."""
 
         if os.path.isfile(os.path.join(self.args.out_dir, "latest.pt")):
-            ckpt = torch.load(os.path.join(self.args.out_dir, "latest.pt"), map_location=self.device)
+            ckpt = torch.load(
+                os.path.join(self.args.out_dir, "latest.pt"), map_location=self.device
+            )
             latest_epoch = ckpt.get("epoch", None)
         else:
             latest_epoch = None
@@ -157,7 +160,7 @@ class Trainer:
             self.epoch += 1
             self.prefetcher.reset()
             self.train_epoch(pbar)
-            self.validate()
+            # self.validate()
             self.update_learning_rate()
             if self.epoch % self.args.save_freq == 0:
                 self.save()
@@ -178,16 +181,31 @@ class Trainer:
             if batch is None:
                 break
 
-            data, target = batch
+            # Unpack the batch and move to device
+            img_train, gt_train = normalize_augment(batch)
+            img_train, gt_train = img_train.to(self.device), gt_train.to(self.device)
+
             self.iteration += 1
 
-            data, target = data.to(self.device), target.to(self.device)
+            B, _, H, W = img_train.size()
+            stdn = (
+                torch.empty((B, 1, 1, 1))
+                .to(self.device)
+                .uniform_(self.args.noise_ival[0], to=self.args.noise_ival[1])
+            )
+            # draw noise samples from std dev tensor
+            noise = torch.zeros_like(img_train).to(self.device)
+            noise = torch.normal(mean=noise, std=stdn.expand_as(noise))
+
+            #define noisy inputs
+            imgn_train = img_train + noise
+            noise_map = stdn.expand((B, 1, H, W)).to(self.device) # one channel per image
 
             self.optimizer.zero_grad()
 
             with torch.amp.autocast("cuda"):
-                output = self.model(data)
-                loss = F.nll_loss(output, target)
+                output = self.model(imgn_train, noise_map)
+                loss = self.criterion(output, gt_train) / (B*2)
 
             # Backpropagation
             self.scaler.scale(loss).backward()
@@ -199,9 +217,9 @@ class Trainer:
             # Console logs
             pbar.update(1)
             if self.iteration % 10 == 0:
+                self.model.apply(svd_orthogonalization)
                 self.current_lr = self.get_lr()
                 pbar.set_description((f"LR: {self.current_lr} Loss: {loss.item():.3f}"))
-
 
         # Clean up
         torch.cuda.empty_cache()
@@ -211,7 +229,7 @@ class Trainer:
                 self.epoch,
                 self.iteration,
                 self.args.iterations,
-                100.0, #* batch_idx / len(train_loader),
+                100.0,  # * batch_idx / len(train_loader),
                 loss.item(),
             )
         )

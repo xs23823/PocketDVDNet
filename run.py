@@ -1,14 +1,12 @@
-import argparse
-import torch
-from torchvision import datasets, transforms
 import yaml
+import torch
+import argparse
 
-
-from models.fastdvdnet import FastDVDnet
-from models.net import Net
 from trainer import Trainer
 from utils.prefetcher import PrefetchDataLoader, CPUPrefetcher
 
+from models.fastdvdnet import FastDVDnet
+from dataloaders.fastdvdnet import DVDDataset, ValDataset
 
 def main(args):
 
@@ -21,19 +19,16 @@ def main(args):
         print("No accelerator found, using CPU")
         device = torch.device("cpu")
 
-
     # Datasets
-    transform=transforms.Compose([
-        transforms.ToTensor(),
-        transforms.Normalize((0.1307,), (0.3081,))
-        ])
-    train_dataset = datasets.MNIST('../data', train=True, download=True,
-                       transform=transform)
-    val_dataset = datasets.MNIST('../data', train=False,
-                       transform=transform)
-    
+    val_dataset = ValDataset(valsetdir=args.valset_dir, gray_mode=False)
+    train_dataset = DVDDataset(
+        root_dir=args.trainset_dir,
+        sequence_length=5,
+        crop_size=args.patch_size,
+    )
+
     # Loaders
-    val_loader  = torch.utils.data.DataLoader(
+    val_loader = torch.utils.data.DataLoader(
         **dict(
             dataset=val_dataset,
             batch_size=args.test_batch_size,
@@ -43,34 +38,42 @@ def main(args):
         )
     )
     train_loader = PrefetchDataLoader(
-        args.num_prefetch_queue, 
+        args.num_prefetch_queue,
         **dict(
             dataset=train_dataset,
             batch_size=args.batch_size,
             num_workers=args.num_workers,
             pin_memory=True,
             shuffle=True,
-            drop_last=True
-        )
+            drop_last=True,
+        ),
     )
     prefetcher = CPUPrefetcher(train_loader)
 
-
-    model = Net().to(device)
+    model = FastDVDnet().to(device)
 
     trainer = Trainer(args, model, prefetcher, val_loader)
     torch.compile(trainer.train(), mode="default")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     # Training settings
-    parser = argparse.ArgumentParser(description='PyTorch MNIST Example')
-    parser.add_argument('--config', type=str, default="./configs/net.yaml",
-                        help='path to YAML config file')
+    parser = argparse.ArgumentParser(description="PyTorch MNIST Example")
+    parser.add_argument(
+        "--config",
+        type=str,
+        default="./configs/fastdvdnet.yaml",
+        help="path to YAML config file",
+    )
     args = parser.parse_args()
 
-    with open(args.config, 'r') as f:
+    with open(args.config, "r") as f:
         cfg = yaml.safe_load(f)
     for key, val in cfg.items():
         setattr(args, key, val)
+
+    args.val_noiseL /= 255.
+    args.noise_ival[0] /= 255.
+    args.noise_ival[1] /= 255.
+
     main(args)

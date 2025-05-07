@@ -1,21 +1,26 @@
-# configs/net.yaml
+# configs/fastdvdnet.yaml
 
 # Configuration for FastDVDNet
-batch_size:      64    
+batch_size: 64    
+patch_size: 96
 test_batch_size: 1000  
-epochs:          14    
-lr:              1e-3  
-gamma:           0.7   
+epochs: 14    
+lr: 0.001 
+gamma: 0.7
+noise_ival: [5, 55]
+val_noiseL: 25.0
 
-no_accel:   false      
-dry_run:    false      
-save_freq:  2
+no_accel: false      
+dry_run: false      
+save_freq: 20
 
-seed:         1        
+seed: 1        
 
 out_dir: "./out"
+valset_dir: "/home/wg19671/repos/fastdvdnet/val"
+trainset_dir: "/home/wg19671/repos/fastdvdnet/data"
 iterations: 2000
-num_workers: 0
+num_workers: 4
 num_prefetch_queue: 8
 log_freq: 10
 
