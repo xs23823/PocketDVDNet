@@ -1,17 +1,17 @@
 import os
-import glob
+import time
 from tqdm.auto import tqdm
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
+import torchvision
 from torch.utils.tensorboard import SummaryWriter
 
 from torch.optim.lr_scheduler import StepLR
 from utils.lr_scheduler import MultiStepRestartLR, CosineAnnealingRestartLR
 
-from dataloaders.fastdvdnet.utils import svd_orthogonalization, normalize_augment
+from dataloaders.fastdvdnet.utils import *
 
 
 class Trainer:
@@ -25,7 +25,7 @@ class Trainer:
         self.device = next(model.parameters()).device
         self.epoch = start_epoch
         self.iteration = 0
-        self.best_acc = 0
+        self.best_psnr = 0.0
         self.is_best = False
 
         # setup optimizers and schedulers
@@ -55,9 +55,7 @@ class Trainer:
             {"params": backbone_params, "lr": self.args.lr},
         ]
 
-        self.optimizer = torch.optim.Adadelta(
-            optim_params,
-        )
+        self.optimizer = torch.optim.Adam(optim_params)
 
     def setup_schedulers(self):
         """Set up schedulers."""
@@ -84,7 +82,11 @@ class Trainer:
             print(
                 f"Scheduler {scheduler_type} is not recognized. Defaulting to StepLR."
             )
-            self.scheduler = StepLR(self.optimizer, step_size=1, gamma=self.args.gamma)
+            self.scheduler = StepLR(
+                self.optimizer,
+                step_size=scheduler_opt["step_size"],
+                gamma=scheduler_opt["gamma"],
+            )
 
     def update_learning_rate(self):
         """Update learning rate."""
@@ -112,8 +114,10 @@ class Trainer:
                 os.path.join(self.args.out_dir, "latest.pt"), map_location=self.device
             )
             latest_epoch = ckpt.get("epoch", None)
+            self.best_psnr = ckpt.get("best_psnr", 0.0)
         else:
             latest_epoch = None
+            self.best_psnr = 0.0
 
         if latest_epoch is not None:
             model_path = os.path.join(self.args.out_dir, f"latest.pt")
@@ -128,6 +132,7 @@ class Trainer:
 
         else:
             print("Training from scratch!")
+            self.best_psnr = 0.0
 
     def save(self):
         """Save latest checkpoint and, if flagged, update best checkpoint."""
@@ -138,6 +143,7 @@ class Trainer:
             "model_state": self.model.state_dict(),
             "optim_state": self.optimizer.state_dict(),
             "sched_state": self.scheduler.state_dict(),
+            "best_psnr": self.best_psnr,
         }
 
         # always overwrite latest.pt
@@ -160,10 +166,8 @@ class Trainer:
             self.epoch += 1
             self.prefetcher.reset()
             self.train_epoch(pbar)
-            # self.validate()
-            self.update_learning_rate()
-            if self.epoch % self.args.save_freq == 0:
-                self.save()
+            self.validate()
+            self.save()
 
         pbar.close()
         tqdm.write("\nTraining complete.")
@@ -174,7 +178,6 @@ class Trainer:
         """
 
         self.model.train()
-        tqdm.write(f"Training epoch {self.epoch}...")
 
         while True:
             batch = self.prefetcher.next()
@@ -182,7 +185,7 @@ class Trainer:
                 break
 
             # Unpack the batch and move to device
-            img_train, gt_train = normalize_augment(batch)
+            img_train, gt_train = batch
             img_train, gt_train = img_train.to(self.device), gt_train.to(self.device)
 
             self.iteration += 1
@@ -197,15 +200,17 @@ class Trainer:
             noise = torch.zeros_like(img_train).to(self.device)
             noise = torch.normal(mean=noise, std=stdn.expand_as(noise))
 
-            #define noisy inputs
+            # define noisy inputs
             imgn_train = img_train + noise
-            noise_map = stdn.expand((B, 1, H, W)).to(self.device) # one channel per image
+            noise_map = stdn.expand((B, 1, H, W)).to(
+                self.device
+            )
 
             self.optimizer.zero_grad()
 
             with torch.amp.autocast("cuda"):
                 output = self.model(imgn_train, noise_map)
-                loss = self.criterion(output, gt_train) / (B*2)
+                loss = self.criterion(output, gt_train) / (B * 2)
 
             # Backpropagation
             self.scaler.scale(loss).backward()
@@ -223,6 +228,14 @@ class Trainer:
 
         # Clean up
         torch.cuda.empty_cache()
+        self.update_learning_rate()
+
+        # # Log training images
+        # img = torchvision.utils.make_grid(
+        #     img_train.view(-1, 3, H, W),
+        #     nrow=8, normalize=True, scale_each=True
+        # )
+        # self.writer.add_image('Training patches', img, self.epoch)
 
         tqdm.write(
             "Train Epoch: {} [{}/{} ({:.0f}%)] - [Loss: {:.6f}]".format(
@@ -235,33 +248,72 @@ class Trainer:
         )
 
     def validate(self):
-        """Validate the model."""
+        """Validate the model and log images to TensorBoard."""
+
         self.model.eval()
 
-        test_loss = 0
-        correct = 0
+        psnr_val = 0
+        t1 = time.time()
+
         with torch.no_grad():
-            for data, target in self.val_loader:
-                data, target = data.to(self.device), target.to(self.device)
-                output = self.model(data)
-                test_loss += F.nll_loss(
-                    output, target, reduction="sum"
-                ).item()  # sum up batch loss
-                pred = output.argmax(
-                    dim=1, keepdim=True
-                )  # get the index of the max log-probability
-                correct += pred.eq(target.view_as(pred)).sum().item()
+            for seq_val in tqdm(self.val_loader, leave=False, desc="Validating"):
+                # Add noise to the validation sequence
+                noise = torch.FloatTensor(seq_val.size()).normal_(
+                    mean=0, std=self.args.val_noiseL
+                )
+                seqn_val = seq_val + noise
+                seqn_val = seqn_val.to(self.device, non_blocking=True)
 
-        self.best_acc = max(correct / len(self.val_loader.dataset), self.best_acc)
-        self.is_best = correct >= self.best_acc
+                # Prepare noise standard deviation tensor
+                sigma_noise = torch.tensor(
+                    [self.args.val_noiseL], dtype=torch.float32, device=self.device
+                )
 
-        test_loss /= len(self.val_loader.dataset)
+                # Perform denoising
+                out_val = denoise_seq_fastdvdnet(
+                    seq=seqn_val[0], noise_std=sigma_noise, model_temporal=self.model
+                )
 
-        tqdm.write(
-            "Validation Results: Average loss: {:.4f}, Accuracy: {}/{} ({:.0f}%)\n".format(
-                test_loss,
-                correct,
-                len(self.val_loader.dataset),
-                100.0 * correct / len(self.val_loader.dataset),
-            )
+                # Calculate PSNR
+                psnr_val += batch_psnr(out_val.cpu(), seq_val.squeeze_(), 1.0)
+
+            psnr_val /= len(self.val_loader)
+            t2 = time.time()
+
+        # Log PSNR and learning rate
+        self.writer.add_scalar("PSNR on validation data", psnr_val, self.epoch)
+        self.writer.add_scalar("Learning rate", self.current_lr, self.epoch)
+
+        # Check if current model is the best
+        if psnr_val > self.best_psnr:
+            self.best_psnr = psnr_val
+            self.is_best = True
+            print(f"\nNew best model found! PSNR: {psnr_val:.4f}")
+        else:
+            self.is_best = False
+
+        # Log validation images
+        idx = 0
+
+        # Log clean and noisy validation images
+        img = torchvision.utils.make_grid(
+            seq_val.data[idx].clamp(0.0, 1.0), nrow=2, normalize=False, scale_each=False
         )
+        imgn = torchvision.utils.make_grid(
+            seqn_val.data[0][idx].clamp(0.0, 1.0),
+            nrow=2,
+            normalize=False,
+            scale_each=False,
+        )
+        self.writer.add_image("Clean validation image {}".format(idx), img, self.epoch)
+        self.writer.add_image("Noisy validation image {}".format(idx), imgn, self.epoch)
+
+        # Log reconstructed validation results
+        irecon = torchvision.utils.make_grid(
+            out_val.data[idx].clamp(0.0, 1.0), nrow=2, normalize=False, scale_each=False
+        )
+        self.writer.add_image(
+            "Reconstructed validation image {}".format(idx), irecon, self.epoch
+        )
+
+        print(f"\n[epoch {self.epoch}] PSNR_val: {psnr_val:.4f}, on {t2-t1:.2f} sec")

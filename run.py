@@ -23,16 +23,14 @@ def main(args):
     val_dataset = ValDataset(valsetdir=args.valset_dir, gray_mode=False)
     train_dataset = DVDDataset(
         root_dir=args.trainset_dir,
-        sequence_length=5,
-        crop_size=args.patch_size,
     )
 
     # Loaders
     val_loader = torch.utils.data.DataLoader(
         **dict(
             dataset=val_dataset,
-            batch_size=args.test_batch_size,
-            num_workers=args.num_workers,
+            batch_size=1,
+            num_workers=2,
             pin_memory=True,
             shuffle=False,
         )

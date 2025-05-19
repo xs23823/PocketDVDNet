@@ -17,7 +17,7 @@ log_interval: 10
 
 out_dir: "./out"
 iterations: 20000
-num_workers: 0
+num_workers: 8
 num_prefetch_queue: 8
 log_freq: 10
 
