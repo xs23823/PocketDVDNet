@@ -7,11 +7,13 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
 from torch.utils.tensorboard import SummaryWriter
+import numpy as np
 
 from torch.optim.lr_scheduler import StepLR
 from utils.lr_scheduler import MultiStepRestartLR, CosineAnnealingRestartLR
 
 from dataloaders.fastdvdnet.utils import *
+from dataloaders.noise import NoiseModel
 
 
 class Trainer:
@@ -41,6 +43,9 @@ class Trainer:
         self.summary = {}
         self.log_dir = os.path.join(args.out_dir, "logs")
         self.writer = SummaryWriter(self.log_dir)
+
+        # Noise Model
+        self.noise_fn = NoiseModel("./dataloaders/predicted_labels.csv")
 
     def setup_optimizers(self):
         """Set up optimizers."""
@@ -114,7 +119,7 @@ class Trainer:
                 os.path.join(self.args.out_dir, "latest.pt"), map_location=self.device
             )
             latest_epoch = ckpt.get("epoch", None)
-            self.best_psnr = ckpt.get("best_psnr", 0.0)
+            self.best_psnr = 0.0
         else:
             latest_epoch = None
             self.best_psnr = 0.0
@@ -143,19 +148,16 @@ class Trainer:
             "model_state": self.model.state_dict(),
             "optim_state": self.optimizer.state_dict(),
             "sched_state": self.scheduler.state_dict(),
-            "best_psnr": self.best_psnr,
         }
 
         # always overwrite latest.pt
         latest_path = os.path.join(self.args.out_dir, "latest.pt")
         torch.save(ckpt, latest_path)
-        print(f"Saved latest checkpoint to {latest_path}")
 
         # if this is the best so far, also overwrite best.pt
         if self.is_best:
             best_path = os.path.join(self.args.out_dir, "best.pt")
             torch.save(ckpt, best_path)
-            print(f"Saved best checkpoint to   {best_path}")
 
     def train(self):
 
@@ -190,6 +192,7 @@ class Trainer:
 
             self.iteration += 1
 
+            # Add noise to the training sequence
             B, _, H, W = img_train.size()
             stdn = (
                 torch.empty((B, 1, 1, 1))
@@ -202,10 +205,11 @@ class Trainer:
 
             # define noisy inputs
             imgn_train = img_train + noise
-            noise_map = stdn.expand((B, 1, H, W)).to(
+            noise_map = stdn.expand((B, 15, H, W)).to(
                 self.device
             )
 
+            # Set optimizer gradients to zero
             self.optimizer.zero_grad()
 
             with torch.amp.autocast("cuda"):
@@ -229,23 +233,6 @@ class Trainer:
         # Clean up
         torch.cuda.empty_cache()
         self.update_learning_rate()
-
-        # # Log training images
-        # img = torchvision.utils.make_grid(
-        #     img_train.view(-1, 3, H, W),
-        #     nrow=8, normalize=True, scale_each=True
-        # )
-        # self.writer.add_image('Training patches', img, self.epoch)
-
-        tqdm.write(
-            "Train Epoch: {} [{}/{} ({:.0f}%)] - [Loss: {:.6f}]".format(
-                self.epoch,
-                self.iteration,
-                self.args.iterations,
-                100.0,  # * batch_idx / len(train_loader),
-                loss.item(),
-            )
-        )
 
     def validate(self):
         """Validate the model and log images to TensorBoard."""
@@ -288,7 +275,6 @@ class Trainer:
         if psnr_val > self.best_psnr:
             self.best_psnr = psnr_val
             self.is_best = True
-            print(f"\nNew best model found! PSNR: {psnr_val:.4f}")
         else:
             self.is_best = False
 
@@ -305,15 +291,17 @@ class Trainer:
             normalize=False,
             scale_each=False,
         )
-        self.writer.add_image("Clean validation image {}".format(idx), img, self.epoch)
-        self.writer.add_image("Noisy validation image {}".format(idx), imgn, self.epoch)
+        # self.writer.add_image("Clean validation image {}".format(idx), img, self.epoch)
+        # self.writer.add_image("Noisy validation image {}".format(idx), imgn, self.epoch)
 
         # Log reconstructed validation results
         irecon = torchvision.utils.make_grid(
             out_val.data[idx].clamp(0.0, 1.0), nrow=2, normalize=False, scale_each=False
         )
+        # combine clean, noisy, and reconstructed images into a single grid
+        combined = torch.cat((imgn.cpu(), img.cpu(), irecon.cpu()), dim=1)
         self.writer.add_image(
-            "Reconstructed validation image {}".format(idx), irecon, self.epoch
+            "{}_noisy-gt-out".format(idx), combined, self.epoch
         )
 
-        print(f"\n[epoch {self.epoch}] PSNR_val: {psnr_val:.4f}, on {t2-t1:.2f} sec")
+        tqdm.write(f"\n[epoch {self.epoch}] PSNR_val: {psnr_val:.4f} (Best: {self.is_best}), on {t2-t1:.2f} sec")
