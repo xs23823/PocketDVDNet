@@ -48,22 +48,37 @@ def denoise_seq_fastdvdnet(seq, noise_std, model_temporal, temp_psz=5):
 	r"""Denoises a sequence of frames with FastDVDnet.
 
 	Args:
-		seq: Tensor. [numframes, 1, C, H, W] array containing the noisy input frames
-		noise_std: Tensor. Standard deviation of the added noise
-		temp_psz: size of the temporal patch
-		model_temp: instance of the PyTorch model of the temporal denoiser
+		seq: Tensor. [numframes, C, H, W] array containing the noisy input frames (Note: docstring previously said [numframes, 1, C, H, W])
+		noise_std: Tensor. Scalar tensor representing the standard deviation of the added noise (e.g., torch.tensor([0.1])).
+		temp_psz: size of the temporal patch, should match model_temporal.num_input_frames.
+		model_temporal: instance of the PyTorch model of the temporal denoiser (FastDVDnet).
 	Returns:
 		denframes: Tensor, [numframes, C, H, W]
 	"""
 	# init arrays to handle contiguous frames and related patches
 
-	numframes, C, H, W = seq.shape
+	numframes, C, H, W = seq.shape # C is num_color_ch
 	ctrlfr_idx = int((temp_psz-1)//2)
 	inframes = list()
 	denframes = torch.empty((numframes, C, H, W)).to(seq.device)
 
-	# build noise map from noise std---assuming Gaussian noise
-	noise_map = noise_std.expand((1, 1, H, W))
+	# build noise_map_bundle from noise_std --- assuming Gaussian noise
+	# model_temporal is an instance of FastDVDnet
+	# noise_std is a scalar tensor like torch.tensor([value])
+	
+	# Get model properties for noise map bundle construction
+	# temp_psz is the number of frames in the input patch to the model
+	model_input_frames = temp_psz 
+	model_noise_ch_per_frame = model_temporal.noise_ch_per_frame_in_bundle
+	num_total_noise_bundle_channels = model_input_frames * model_noise_ch_per_frame
+	
+	# Ensure noise_std is correctly shaped for broadcasting (e.g., from torch.tensor([v]) to torch.tensor([[[[v]]]]))
+	noise_std_reshaped = noise_std.view(1, 1, 1, 1) 
+	
+	# noise_map_bundle will be passed to model_temporal via temp_denoise
+	# It should have dimensions [1, num_total_noise_bundle_channels, H, W]
+	# This assumes the same noise_std applies to all channels in the bundle.
+	noise_map_bundle = noise_std_reshaped.expand((1, num_total_noise_bundle_channels, H, W))
 
 	for fridx in range(numframes):
 		# load input frames
@@ -76,11 +91,13 @@ def denoise_seq_fastdvdnet(seq, noise_std, model_temporal, temp_psz=5):
 			del inframes[0]
 			relidx = min(fridx + ctrlfr_idx, -fridx + 2*(numframes-1)-ctrlfr_idx) # handle border conditions
 			inframes.append(seq[relidx])
-
+               
+		# inframes_t is [1, temp_psz * C, H, W]
 		inframes_t = torch.stack(inframes, dim=0).contiguous().view((1, temp_psz*C, H, W)).to(seq.device)
 
 		# append result to output list
-		denframes[fridx] = temp_denoise(model_temporal, inframes_t, noise_map)
+		# Pass the correctly shaped noise_map_bundle to temp_denoise
+		denframes[fridx] = temp_denoise(model_temporal, inframes_t, noise_map_bundle)
 
 	# free memory up
 	del inframes

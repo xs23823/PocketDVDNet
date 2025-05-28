@@ -2,3 +2,4 @@
 /data
 /out
 /out_best
+*.pyc

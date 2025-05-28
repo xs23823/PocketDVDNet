@@ -15,15 +15,15 @@ dry_run: false
 
 seed: 1        
 
-out_dir: "./out_best"
+out_dir: "./out/out_extra_data_3"
 valset_dir: "/home/wg19671/repos/fastdvdnet/val"
 trainset_dir: "/home/wg19671/repos/fastdvdnet/data"
-iterations: 30000
-num_workers: 8
-num_prefetch_queue: 8
+iterations: 200000
+num_workers: 12
+num_prefetch_queue: 16
 log_freq: 10
 
 scheduler:
   name: "StepLR"
-  step_size: 80
-  gamma: 0.1
+  step_size: 60
+  gamma: 0.5
