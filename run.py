@@ -6,7 +6,7 @@ from trainer import Trainer
 from utils.prefetcher import PrefetchDataLoader, CPUPrefetcher
 
 from models.fastdvdnet import FastDVDnet
-from dataloaders.fastdvdnet import DVDDataset, ValDataset
+from dataloaders.fastdvdnet import DVDDataset, ValDataset, Sampler
 
 def main(args):
 
@@ -21,9 +21,15 @@ def main(args):
 
     # Datasets
     val_dataset = ValDataset(valsetdir=args.valset_dir, gray_mode=False)
-    train_dataset = DVDDataset(
+    dvd = DVDDataset(
         root_dir=args.trainset_dir,
+        crop_size=args.patch_size,
     )
+    bvidvc = DVDDataset(
+        root_dir="/media/wg19671/DATA/BVI-AOM/frames",
+        crop_size=args.patch_size,
+    )
+    train_sampler = Sampler([bvidvc, dvd], iter = True)
 
     # Loaders
     val_loader = torch.utils.data.DataLoader(
@@ -38,10 +44,10 @@ def main(args):
     train_loader = PrefetchDataLoader(
         args.num_prefetch_queue,
         **dict(
-            dataset=train_dataset,
+            dataset=train_sampler,
             batch_size=args.batch_size,
             num_workers=args.num_workers,
-            pin_memory=True,
+            pin_memory=False,
             shuffle=True,
             drop_last=True,
         ),
