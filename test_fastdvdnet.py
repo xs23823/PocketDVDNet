@@ -20,8 +20,8 @@ NUM_IN_FR_EXT = 5 # Number of frames required by FastDVDnet
 
 class InferenceArgs:
 	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	checkpoint_path = './out/out_extra_data_3/best.pt'
-	camera_index = 4
+	checkpoint_path = 'best.pt'
+	camera_index = 0
 	noise_sigma = 30.0
 	display_width = 1920
 	display_height = 1080
