@@ -15,9 +15,9 @@ dry_run: false
 
 seed: 1        
 
-out_dir: "./out/out_extra_data_3"
-valset_dir: "/home/wg19671/repos/fastdvdnet/val"
-trainset_dir: "/home/wg19671/repos/fastdvdnet/data"
+out_dir: "/home/imogend/Documents/Data/out_extra_data"
+valset_dir: "/home/imogend/Documents/Data/DAVIS 420p JPEG VAL"
+trainset_dir: "/home/imogend/Documents/Data/PNG_TRAINING_SEQUENCES"
 iterations: 200000
 num_workers: 12
 num_prefetch_queue: 16

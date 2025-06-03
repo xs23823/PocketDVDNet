@@ -26,7 +26,7 @@ def main(args):
         crop_size=args.patch_size,
     )
     bvidvc = DVDDataset(
-        root_dir="/media/wg19671/DATA/BVI-AOM/frames",
+        root_dir="/home/imogend/Documents/Data/PNG_TRAINING_SEQUENCES",
         crop_size=args.patch_size,
     )
     train_sampler = Sampler([bvidvc, dvd], iter = True)
@@ -57,7 +57,11 @@ def main(args):
     model = FastDVDnet().to(device)
 
     trainer = Trainer(args, model, prefetcher, val_loader)
-    torch.compile(trainer.train(), mode="default")
+    
+    if getattr(args, 'use_obproxsg', False):
+        trainer.train()  # No compile for OBProxSG
+    else:
+        torch.compile(trainer.train(), mode="default")
 
 
 if __name__ == "__main__":

@@ -90,9 +90,15 @@ class DVDDataset(Dataset):
         # Variance = std^2.
         noise_std = 5.0 / 255.0
         noise_var = noise_std ** 2
+        def add_gaussian_noise(image, **kwargs):
+            noise_std = 5.0 / 255.0
+            noise = np.random.normal(0, noise_std, image.shape).astype(np.float32)
+            return image + noise
+        
         self.A_add_csnt = A.Compose([
-            A.GaussNoise(var_limit=(noise_var, noise_var), mean=0, p=1.0)
+            A.Lambda(image=add_gaussian_noise, p=1.0)
         ])
+
 
         self.albumentations_aug_ops = [
             self.A_do_nothing,

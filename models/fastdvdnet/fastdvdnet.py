@@ -63,7 +63,7 @@ class UpBlock(nn.Module):
 			nn.Conv2d(in_ch, out_ch*4, kernel_size=3, padding=1, bias=False),
 			nn.PixelShuffle(2)
 		)
-
+		
 	def forward(self, x):
 		return self.convblock(x)
 

@@ -1,5 +1,6 @@
 import os
 import time
+import csv
 from tqdm.auto import tqdm
 
 import torch
@@ -14,6 +15,8 @@ from utils.lr_scheduler import MultiStepRestartLR, CosineAnnealingRestartLR
 
 from dataloaders.fastdvdnet.utils import *
 from dataloaders.noise import NoiseModel
+
+from obproxsg import OBProxSG
 
 
 class Trainer:
@@ -39,16 +42,18 @@ class Trainer:
         self.current_lr = self.get_lr()
         self.criterion = nn.MSELoss(reduction="sum")
 
-        # Set up tensorboard
+        # tensorboard
         self.summary = {}
         self.log_dir = os.path.join(args.out_dir, "logs")
         self.writer = SummaryWriter(self.log_dir)
 
         # Noise Model
         self.noise_fn = NoiseModel("./dataloaders/predicted_labels.csv")
+        # progress log
+        self.log_file = open(os.path.join(args.out_dir, 'training_log.csv'), 'a')
 
     def setup_optimizers(self):
-        """Set up optimizers."""
+        """Set up optimizers - Modified to support OBProxSG."""
         backbone_params = []
         for name, param in self.model.named_parameters():
             if param.requires_grad:
@@ -56,11 +61,28 @@ class Trainer:
             else:
                 print(f"Params {name} will not be optimized.")
 
-        optim_params = [
-            {"params": backbone_params, "lr": self.args.lr},
-        ]
-
-        self.optimizer = torch.optim.Adam(optim_params)
+        # Check if we should use OBProxSG for sparsity training
+        use_obproxsg = getattr(self.args, 'use_obproxsg', False)
+        
+        if use_obproxsg:
+            print("Using OBProxSG optimizer for sparsity-aware training")
+            
+            self.optimizer = OBProxSG(
+                backbone_params,
+                lr=self.args.lr,
+                lambda_reg=getattr(self.args, 'lambda_reg', 1e-5),
+                epochSize=getattr(self.args, 'epochSize', 1000),
+                Np=getattr(self.args, 'Np', 2),
+                No=getattr(self.args, 'No', 'inf'),
+                eps=getattr(self.args, 'eps', 1e-4),
+                weight_decay=getattr(self.args, 'weight_decay', 0)
+            )
+        else:
+            # Original Adam optimizer
+            optim_params = [
+                {"params": backbone_params, "lr": self.args.lr},
+            ]
+            self.optimizer = torch.optim.Adam(optim_params)
 
     def setup_schedulers(self):
         """Set up schedulers."""
@@ -83,7 +105,6 @@ class Trainer:
             )
 
         else:
-            # Default to StepLR
             print(
                 f"Scheduler {scheduler_type} is not recognized. Defaulting to StepLR."
             )
@@ -100,6 +121,17 @@ class Trainer:
     def get_lr(self):
         """Get current learning rate."""
         return self.optimizer.param_groups[0]["lr"]
+    
+    def get_model_sparsity(self):
+        """return model sparsity."""
+        total = 0
+        zeros = 0
+        for p in self.model.parameters():
+            if p.requires_grad:
+                total += p.numel()
+                zeros += (p == 0).sum().item()
+        sparsity = zeros / total if total > 0 else 0
+        return sparsity
 
     def add_summary(self, writer, name, val):
         """Add tensorboard summary."""
@@ -135,12 +167,24 @@ class Trainer:
             self.optimizer.load_state_dict(ckpt["optim_state"])
             self.scheduler.load_state_dict(ckpt["sched_state"])
 
+               
+            if getattr(self.args, 'reset_lr', False):
+                print(f"Resetting learning rate from {self.optimizer.param_groups[0]['lr']:.2e} to {self.args.lr:.2e}")
+                for param_group in self.optimizer.param_groups:
+                    param_group['lr'] = self.args.lr
+                self.setup_schedulers()
+                print("Learning rate and scheduler reset for pruning phase")
+
+
         else:
             print("Training from scratch!")
             self.best_psnr = 0.0
 
     def save(self):
         """Save latest checkpoint and, if flagged, update best checkpoint."""
+    
+        sparsity = self.get_model_sparsity()
+        
         # bundle everything into one dict
         ckpt = {
             "epoch": self.epoch,
@@ -148,6 +192,7 @@ class Trainer:
             "model_state": self.model.state_dict(),
             "optim_state": self.optimizer.state_dict(),
             "sched_state": self.scheduler.state_dict(),
+            "sparsity": sparsity,  
         }
 
         # always overwrite latest.pt
@@ -223,12 +268,31 @@ class Trainer:
 
             self.add_summary(self.writer, "loss", loss.item())
 
+            if self.iteration % 100 == 0:
+                self.log_file.write(f"{self.iteration},{loss.item():.4f},{self.get_model_sparsity():.4f}\n")
+
+            
+            # log sparsity if using obprox
+            if isinstance(self.optimizer, OBProxSG) and self.iteration % 100 == 0:
+                sparsity = self.get_model_sparsity()
+                self.writer.add_scalar("sparsity", sparsity, self.iteration)
+
             # Console logs
             pbar.update(1)
             if self.iteration % 10 == 0:
                 self.model.apply(svd_orthogonalization)
                 self.current_lr = self.get_lr()
-                pbar.set_description((f"LR: {self.current_lr} Loss: {loss.item():.3f}"))
+                
+                #found from other script but check if works/useful
+                if isinstance(self.optimizer, OBProxSG):
+                    sparsity = self.get_model_sparsity()
+                    pbar.set_description(
+                        f"LR: {self.current_lr} Loss: {loss.item():.3f} Sparsity: {sparsity:.1%}"
+                    )
+                else:
+                    pbar.set_description(
+                        f"LR: {self.current_lr} Loss: {loss.item():.3f}"
+                    )
 
         # Clean up
         torch.cuda.empty_cache()
@@ -291,8 +355,6 @@ class Trainer:
             normalize=False,
             scale_each=False,
         )
-        # self.writer.add_image("Clean validation image {}".format(idx), img, self.epoch)
-        # self.writer.add_image("Noisy validation image {}".format(idx), imgn, self.epoch)
 
         # Log reconstructed validation results
         irecon = torchvision.utils.make_grid(
@@ -304,4 +366,11 @@ class Trainer:
             "{}_noisy-gt-out".format(idx), combined, self.epoch
         )
 
-        tqdm.write(f"\n[epoch {self.epoch}] PSNR_val: {psnr_val:.4f} (Best: {self.is_best}), on {t2-t1:.2f} sec")
+        if isinstance(self.optimizer, OBProxSG):
+            sparsity = self.get_model_sparsity()
+            self.writer.add_scalar("sparsity_epoch", sparsity, self.epoch)
+            status_msg = f"\n[epoch {self.epoch}] PSNR_val: {psnr_val:.4f} (Best: {self.is_best}), Sparsity: {sparsity:.1%}, on {t2-t1:.2f} sec"
+        else:
+            status_msg = f"\n[epoch {self.epoch}] PSNR_val: {psnr_val:.4f} (Best: {self.is_best}), on {t2-t1:.2f} sec"
+        
+        tqdm.write(status_msg)

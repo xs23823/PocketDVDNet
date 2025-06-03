@@ -1,0 +1,39 @@
+# configs/fastdvdnet.yaml
+
+# Configuration for FastDVDNet
+batch_size: 64    
+patch_size: 96
+test_batch_size: 1000  
+epochs: 14    
+lr: 0.000001 
+gamma: 0.1
+noise_ival: [5, 55]
+val_noiseL: 25.0
+
+no_accel: false      
+dry_run: false      
+
+seed: 1        
+
+out_dir: "/home/imogend/Documents/Data/out_extra_data"
+valset_dir: "/home/imogend/Documents/Data/DAVIS 420p JPEG VAL"
+trainset_dir: "/home/imogend/Documents/Data/PNG_TRAINING_SEQUENCES"
+iterations: 50000
+num_workers: 12
+num_prefetch_queue: 16
+log_freq: 10
+
+scheduler:
+  name: "StepLR" #more gentle for pruning
+  step_size: 500
+  gamma: 0.8
+
+# pruning addittions
+use_obproxsg: true
+lambda_reg: 0.0001
+epochSize: 100
+Np: 2
+"No": "inf" # careful as yaml interprets No as a bool lol
+eps: 0.0001
+weight_decay: 0
+reset_lr: true

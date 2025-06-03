@@ -20,15 +20,6 @@ def rgb_to_bgr(tensor):
     Args:
         tensor (torch.Tensor): Image tensor of shape (C, H, W) or (N, C, H, W) in RGB order.
 
-<<<<<<< HEAD
-class InferenceArgs:
-	device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-	checkpoint_path = 'best.pt'
-	camera_index = 0
-	noise_sigma = 30.0
-	display_width = 1920
-	display_height = 1080
-=======
     Returns:
         torch.Tensor: Image tensor in BGR order.
     """
@@ -98,7 +89,6 @@ class ThreadedCamera:
             "height": int(self.stream.get(cv2.CAP_PROP_FRAME_HEIGHT)),
             "fps": self.stream.get(cv2.CAP_PROP_FPS)
         }
->>>>>>> main
 
 
 def main(model):
@@ -279,8 +269,8 @@ if __name__ == "__main__":
 
     class InferenceArgs:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        checkpoint_path = './out/out_extra_data_3/best.pt'
-        camera_index = 4
+        checkpoint_path = '/home/imogend/Documents/Data/out_extra_data/best.pt'
+        camera_index = 0
         noise_sigma = 30.0
         display_width = 1280
         display_height = 720
