@@ -3,9 +3,9 @@ from torch.optim.optimizer import Optimizer, required
 
 class OBProxSG(Optimizer):
     """Orthant-Based Proximal Stochastic Gradient optimizer for sparsity-inducing optimization"""
-    
+     
     def __init__(self, params, lr=required, lambda_reg=required, epochSize=required, 
-                 Np=2, No='inf', eps=0.0001, weight_decay=0):
+                 Np=2, No='inf', eps=0.0001, weight_decay=0, lambda_warmup_steps=10000):
         if lr is not required and lr < 0.0:
             raise ValueError("Invalid learning rate: {}".format(lr))
         if lambda_reg is not required and lambda_reg < 0.0:
@@ -20,6 +20,9 @@ class OBProxSG(Optimizer):
         self.epochSize = epochSize
         self.step_count = 0
         self.iter = 0
+        self.global_step = 0
+        self.lambda_warmup_steps = lambda_warmup_steps
+        self.initial_lambda = lambda_reg
         
         defaults = dict(lr=lr, lambda_reg=lambda_reg, eps=eps, weight_decay=weight_decay)
         super(OBProxSG, self).__init__(params, defaults)
@@ -31,34 +34,46 @@ class OBProxSG(Optimizer):
         
         No = float('inf') if self.No == 'inf' else self.No
         
-        if self.step_count % (self.Np + No) < self.Np:
+        # handle infinite No 
+        if No == float('inf'):
             doNp = True
             if self.iter == 0:
                 print('Prox-SG Step')
         else:
-            doNp = False
-            if self.iter == 0:
-                print('Orthant Step')
+            if self.step_count % (self.Np + No) < self.Np:
+                doNp = True
+                if self.iter == 0:
+                    print('Prox-SG Step')
+            else:
+                doNp = False
+                if self.iter == 0:
+                    print('Orthant Step')
+    
+        
+        warmup_factor = min(1.0, self.global_step / self.lambda_warmup_steps)
+        self.global_step += 1
         
         for group in self.param_groups:
+            effective_lambda = self.initial_lambda * warmup_factor
+            group['lambda_reg'] = effective_lambda  # Update lambda_reg on the fly
+            
             for p in group['params']:
                 if p.grad is None:
                     continue
                     
                 grad_f = p.grad.data
-                
-                # Add weight decay
+                #add weight decay
                 if group['weight_decay'] != 0:
                     grad_f = grad_f.add(p.data, alpha=group['weight_decay'])
-                
+
+                #proximal gradient step
                 if doNp:
-                    # Proximal gradient step
                     d = self.calculate_d(p.data, grad_f, group['lambda_reg'], group['lr'])
                     p.data.add_(d)
-                else:
-                    # Orthant step
+
+                else: #orthant step
                     state = self.state[p]
-                    if 'zeta' not in state.keys():
+                    if 'zeta' not in state:
                         state['zeta'] = torch.zeros_like(p.data)
                     
                     state['zeta'].zero_()

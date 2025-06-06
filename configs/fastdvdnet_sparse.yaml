@@ -5,7 +5,7 @@ batch_size: 64
 patch_size: 96
 test_batch_size: 1000  
 epochs: 14    
-lr: 0.000001 
+lr: 0.00001
 gamma: 0.1
 noise_ival: [5, 55]
 val_noiseL: 25.0
@@ -18,22 +18,24 @@ seed: 1
 out_dir: "/home/imogend/Documents/Data/out_extra_data"
 valset_dir: "/home/imogend/Documents/Data/DAVIS 420p JPEG VAL"
 trainset_dir: "/home/imogend/Documents/Data/PNG_TRAINING_SEQUENCES"
-iterations: 50000
+iterations: 270000
 num_workers: 12
 num_prefetch_queue: 16
 log_freq: 10
 
 scheduler:
-  name: "StepLR" #more gentle for pruning
-  step_size: 500
-  gamma: 0.8
+  name: "StepLR" 
+  step_size: 15000
+  gamma: 0.7
 
-# pruning addittions
+# pruning additions
 use_obproxsg: true
-lambda_reg: 0.0001
-epochSize: 100
+lambda_reg: 0.1
+epochSize: 10
 Np: 2
-"No": "inf" # careful as yaml interprets No as a bool lol
-eps: 0.0001
+"No": "inf" # - careful as yaml interprets No as a bool lol 
+eps: 0.001
 weight_decay: 0
 reset_lr: true
+lambda_warmup_steps: 1 
+sparsity_threshold: 33.4 #highest sparsity will be saved as long as the psnr is above this value

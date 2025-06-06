@@ -31,7 +31,10 @@ class Trainer:
         self.epoch = start_epoch
         self.iteration = 0
         self.best_psnr = 0.0
+        self.best_sparsity = 0.0
+        self.is_best_sparsity = False
         self.is_best = False
+        self.sparsity_threshold = getattr(self.args, 'sparsity_threshold', 0.0)
 
         # setup optimizers and schedulers
         self.setup_optimizers()
@@ -75,7 +78,8 @@ class Trainer:
                 Np=getattr(self.args, 'Np', 2),
                 No=getattr(self.args, 'No', 'inf'),
                 eps=getattr(self.args, 'eps', 1e-4),
-                weight_decay=getattr(self.args, 'weight_decay', 0)
+                weight_decay=getattr(self.args, 'weight_decay', 0),
+                lambda_warmup_steps=getattr(self.args, 'lambda_warmup_steps', 10000)
             )
         else:
             # Original Adam optimizer
@@ -130,8 +134,9 @@ class Trainer:
             if p.requires_grad:
                 total += p.numel()
                 zeros += (p == 0).sum().item()
-        sparsity = zeros / total if total > 0 else 0
+        sparsity = 100.0 * zeros / total if total > 0 else 0
         return sparsity
+
 
     def add_summary(self, writer, name, val):
         """Add tensorboard summary."""
@@ -173,7 +178,6 @@ class Trainer:
                 for param_group in self.optimizer.param_groups:
                     param_group['lr'] = self.args.lr
                 self.setup_schedulers()
-                print("Learning rate and scheduler reset for pruning phase")
 
 
         else:
@@ -192,7 +196,9 @@ class Trainer:
             "model_state": self.model.state_dict(),
             "optim_state": self.optimizer.state_dict(),
             "sched_state": self.scheduler.state_dict(),
-            "sparsity": sparsity,  
+            "sparsity": sparsity, 
+            "best_psnr": self.best_psnr,
+            "best_sparsity": self.best_sparsity, 
         }
 
         # always overwrite latest.pt
@@ -201,8 +207,13 @@ class Trainer:
 
         # if this is the best so far, also overwrite best.pt
         if self.is_best:
-            best_path = os.path.join(self.args.out_dir, "best.pt")
+            best_path = os.path.join(self.args.out_dir, "best_psnr.pt")
             torch.save(ckpt, best_path)
+
+        # If this is the best sparsity so far, also save best_sparsity.pt
+        if self.is_best_sparsity:
+            best_sparsity_path = os.path.join(self.args.out_dir, "best_sparsity.pt")
+            torch.save(ckpt, best_sparsity_path)
 
     def train(self):
 
@@ -271,7 +282,6 @@ class Trainer:
             if self.iteration % 100 == 0:
                 self.log_file.write(f"{self.iteration},{loss.item():.4f},{self.get_model_sparsity():.4f}\n")
 
-            
             # log sparsity if using obprox
             if isinstance(self.optimizer, OBProxSG) and self.iteration % 100 == 0:
                 sparsity = self.get_model_sparsity()
@@ -287,7 +297,7 @@ class Trainer:
                 if isinstance(self.optimizer, OBProxSG):
                     sparsity = self.get_model_sparsity()
                     pbar.set_description(
-                        f"LR: {self.current_lr} Loss: {loss.item():.3f} Sparsity: {sparsity:.1%}"
+                        f"LR: {self.current_lr} Loss: {loss.item():.3f} Sparsity: {sparsity:.1f}%"
                     )
                 else:
                     pbar.set_description(
@@ -331,16 +341,26 @@ class Trainer:
             psnr_val /= len(self.val_loader)
             t2 = time.time()
 
+        current_sparsity = self.get_model_sparsity()
+
         # Log PSNR and learning rate
         self.writer.add_scalar("PSNR on validation data", psnr_val, self.epoch)
         self.writer.add_scalar("Learning rate", self.current_lr, self.epoch)
 
-        # Check if current model is the best
+        # Check if current model is the best psnr
         if psnr_val > self.best_psnr:
             self.best_psnr = psnr_val
             self.is_best = True
         else:
             self.is_best = False
+        
+         # Check if current model is the best sparsity 
+        if psnr_val >= self.sparsity_threshold and current_sparsity > self.best_sparsity:
+            self.best_sparsity = current_sparsity
+            self.is_best_sparsity = True
+            print(f"New best sparsity: {current_sparsity:.2f}% (PSNR: {psnr_val:.4f})")
+        else:
+            self.is_best_sparsity = False
 
         # Log validation images
         idx = 0
@@ -369,7 +389,7 @@ class Trainer:
         if isinstance(self.optimizer, OBProxSG):
             sparsity = self.get_model_sparsity()
             self.writer.add_scalar("sparsity_epoch", sparsity, self.epoch)
-            status_msg = f"\n[epoch {self.epoch}] PSNR_val: {psnr_val:.4f} (Best: {self.is_best}), Sparsity: {sparsity:.1%}, on {t2-t1:.2f} sec"
+            status_msg = f"\n[epoch {self.epoch}] PSNR_val: {psnr_val:.4f} (Best: {self.is_best}), Sparsity: {sparsity:.1f} %, on {t2-t1:.2f} sec"
         else:
             status_msg = f"\n[epoch {self.epoch}] PSNR_val: {psnr_val:.4f} (Best: {self.is_best}), on {t2-t1:.2f} sec"
         
