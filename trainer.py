@@ -32,6 +32,7 @@ class Trainer:
         self.iteration = 0
         self.best_psnr = 0.0
         self.best_sparsity = 0.0
+        self.best_sparsity_info = None  # Will store (zeros, total) for best sparsity model
         self.is_best_sparsity = False
         self.is_best = False
         self.sparsity_threshold = getattr(self.args, 'sparsity_threshold', 0.0)
@@ -52,8 +53,6 @@ class Trainer:
 
         # Noise Model
         self.noise_fn = NoiseModel("./dataloaders/predicted_labels.csv")
-        # progress log
-        self.log_file = open(os.path.join(args.out_dir, 'training_log.csv'), 'a')
 
     def setup_optimizers(self):
         """Set up optimizers - Modified to support OBProxSG."""
@@ -127,7 +126,7 @@ class Trainer:
         return self.optimizer.param_groups[0]["lr"]
     
     def get_model_sparsity(self):
-        """return model sparsity."""
+        """Return model sparsity percentage and raw counts."""
         total = 0
         zeros = 0
         for p in self.model.parameters():
@@ -135,8 +134,7 @@ class Trainer:
                 total += p.numel()
                 zeros += (p == 0).sum().item()
         sparsity = 100.0 * zeros / total if total > 0 else 0
-        return sparsity
-
+        return sparsity, zeros, total
 
     def add_summary(self, writer, name, val):
         """Add tensorboard summary."""
@@ -179,7 +177,6 @@ class Trainer:
                     param_group['lr'] = self.args.lr
                 self.setup_schedulers()
 
-
         else:
             print("Training from scratch!")
             self.best_psnr = 0.0
@@ -187,7 +184,7 @@ class Trainer:
     def save(self):
         """Save latest checkpoint and, if flagged, update best checkpoint."""
     
-        sparsity = self.get_model_sparsity()
+        sparsity, zeros, total = self.get_model_sparsity()
         
         # bundle everything into one dict
         ckpt = {
@@ -205,15 +202,16 @@ class Trainer:
         latest_path = os.path.join(self.args.out_dir, "latest.pt")
         torch.save(ckpt, latest_path)
 
-        # if this is the best so far, also overwrite best.pt
+        # if this is the best PSNR so far, also overwrite best.pt
         if self.is_best:
             best_path = os.path.join(self.args.out_dir, "best_psnr.pt")
             torch.save(ckpt, best_path)
 
-        # If this is the best sparsity so far, also save best_sparsity.pt
+        # If this is the best sparsity so far, save best_sparsity.pt and record sparsity info
         if self.is_best_sparsity:
             best_sparsity_path = os.path.join(self.args.out_dir, "best_sparsity.pt")
             torch.save(ckpt, best_sparsity_path)
+            self.best_sparsity_info = (zeros, total)
 
     def train(self):
 
@@ -229,6 +227,15 @@ class Trainer:
 
         pbar.close()
         tqdm.write("\nTraining complete.")
+        
+        # Print sparsity info for the best sparsity model 
+        if isinstance(self.optimizer, OBProxSG) and self.best_sparsity_info:
+            zeros, total = self.best_sparsity_info
+            tqdm.write(f"Best sparsity model: {zeros} out of {total} parameters zeroed ({sparsity:.2f}%)")
+        elif isinstance(self.optimizer, OBProxSG):
+            # Fallback to current sparsity
+            sparsity, zeros, total = self.get_model_sparsity()
+            tqdm.write(f"Final model sparsity: {zeros} out of {total} parameters zeroed ({sparsity:.2f}%)")
 
     def train_epoch(self, pbar):
         """
@@ -279,30 +286,12 @@ class Trainer:
 
             self.add_summary(self.writer, "loss", loss.item())
 
-            if self.iteration % 100 == 0:
-                self.log_file.write(f"{self.iteration},{loss.item():.4f},{self.get_model_sparsity():.4f}\n")
-
-            # log sparsity if using obprox
-            if isinstance(self.optimizer, OBProxSG) and self.iteration % 100 == 0:
-                sparsity = self.get_model_sparsity()
-                self.writer.add_scalar("sparsity", sparsity, self.iteration)
-
-            # Console logs
+            # Console logs 
             pbar.update(1)
             if self.iteration % 10 == 0:
                 self.model.apply(svd_orthogonalization)
                 self.current_lr = self.get_lr()
-                
-                #found from other script but check if works/useful
-                if isinstance(self.optimizer, OBProxSG):
-                    sparsity = self.get_model_sparsity()
-                    pbar.set_description(
-                        f"LR: {self.current_lr} Loss: {loss.item():.3f} Sparsity: {sparsity:.1f}%"
-                    )
-                else:
-                    pbar.set_description(
-                        f"LR: {self.current_lr} Loss: {loss.item():.3f}"
-                    )
+                pbar.set_description(f"LR: {self.current_lr} Loss: {loss.item():.3f}")
 
         # Clean up
         torch.cuda.empty_cache()
@@ -341,7 +330,8 @@ class Trainer:
             psnr_val /= len(self.val_loader)
             t2 = time.time()
 
-        current_sparsity = self.get_model_sparsity()
+        # Calculate sparsity
+        current_sparsity, zeros, total = self.get_model_sparsity()
 
         # Log PSNR and learning rate
         self.writer.add_scalar("PSNR on validation data", psnr_val, self.epoch)
@@ -386,10 +376,10 @@ class Trainer:
             "{}_noisy-gt-out".format(idx), combined, self.epoch
         )
 
+        # Log to tensorboard 
         if isinstance(self.optimizer, OBProxSG):
-            sparsity = self.get_model_sparsity()
-            self.writer.add_scalar("sparsity_epoch", sparsity, self.epoch)
-            status_msg = f"\n[epoch {self.epoch}] PSNR_val: {psnr_val:.4f} (Best: {self.is_best}), Sparsity: {sparsity:.1f} %, on {t2-t1:.2f} sec"
+            self.writer.add_scalar("sparsity_epoch", current_sparsity, self.epoch)
+            status_msg = f"\n[epoch {self.epoch}] PSNR_val: {psnr_val:.4f} (Best: {self.is_best}), Sparsity: {current_sparsity:.1f}%, on {t2-t1:.2f} sec"
         else:
             status_msg = f"\n[epoch {self.epoch}] PSNR_val: {psnr_val:.4f} (Best: {self.is_best}), on {t2-t1:.2f} sec"
         

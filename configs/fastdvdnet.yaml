@@ -18,7 +18,7 @@ seed: 1
 out_dir: "/home/imogend/Documents/Data/out_extra_data"
 valset_dir: "/home/imogend/Documents/Data/DAVIS 420p JPEG VAL"
 trainset_dir: "/home/imogend/Documents/Data/PNG_TRAINING_SEQUENCES"
-iterations: 200000
+iterations: 2000000
 num_workers: 12
 num_prefetch_queue: 16
 log_freq: 10
