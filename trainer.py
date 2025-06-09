@@ -151,7 +151,7 @@ class Trainer:
 
         if os.path.isfile(os.path.join(self.args.out_dir, "latest.pt")):
             ckpt = torch.load(
-                os.path.join(self.args.out_dir, "latest.pt"), map_location=self.device
+                os.path.join(self.args.out_dir, "latest.pt"), map_location=self.device, weights_only=False
             )
             latest_epoch = ckpt.get("epoch", None)
             self.best_psnr = 0.0
@@ -163,7 +163,7 @@ class Trainer:
             model_path = os.path.join(self.args.out_dir, f"latest.pt")
             print(f"Loading model epoch {latest_epoch} from {model_path}")
 
-            ckpt = torch.load(model_path, map_location=self.device)
+            ckpt = torch.load(model_path, map_location=self.device, weights_only=False)
             self.epoch = ckpt["epoch"]
             self.iteration = ckpt["iteration"]
             self.model.load_state_dict(ckpt["model_state"])

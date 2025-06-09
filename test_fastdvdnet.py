@@ -289,7 +289,7 @@ if __name__ == "__main__":
         model = FastDVDnet(num_input_frames=NUM_IN_FR_EXT)
 
         # Load saved weights
-        checkpoint = torch.load(args.checkpoint_path, map_location=args.device)
+        checkpoint = torch.load(args.checkpoint_path, map_location=args.device, weights_only=False)
         
         # Get the model's state dictionary from the checkpoint
         model_weights = checkpoint.get("model_state_dict") or checkpoint.get("model_state") or checkpoint

@@ -25,8 +25,8 @@ log_freq: 10
 
 scheduler:
   name: "StepLR" 
-  step_size: 20000
-  gamma: 0.7
+  step_size: 10000
+  gamma: 0.8
 
 # pruning additions
 use_obproxsg: true
@@ -34,8 +34,7 @@ lambda_reg: 0.09
 epochSize: 10
 Np: 2
 "No": "inf" # - careful as yaml interprets No as a bool lol 
-eps: 0.00
-1
+eps: 0.001
 weight_decay: 0
 reset_lr: true
 lambda_warmup_steps: 1 
