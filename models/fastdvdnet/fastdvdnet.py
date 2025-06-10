@@ -228,4 +228,3 @@ class FastDVDnet(nn.Module):
 		x = self.temp2(x20, x21, x22, noise_map_for_denblocks) # MODIFIED
 
 		return x
-

@@ -1,5 +1,8 @@
-import yaml
+from torchinfo import summary
+import torch
+import torch.nn as nn
+from models.fastdvdnet import FastDVDnet
 
-with open('configs/fastdvdnet_sparse.yaml', 'r') as f:
-    cfg = yaml.safe_load(f)
-    print(cfg)
+model = FastDVDnet()
+batch_size = 16
+summary(model)

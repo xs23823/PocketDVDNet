@@ -269,7 +269,7 @@ if __name__ == "__main__":
 
     class InferenceArgs:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        checkpoint_path = '/home/imogend/Documents/Data/out_extra_data/latest.pt'
+        checkpoint_path = 'compressed_fastdvdnet1.pt' #'/home/imogend/Documents/Data/out_extra_data/best_sparsity.pt'
         camera_index = 0
         noise_sigma = 30.0
         display_width = 1280
