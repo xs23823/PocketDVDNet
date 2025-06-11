@@ -11,6 +11,7 @@ from threading import Thread, Lock # Added Lock
 
 # --- Import FastDVDnet model and utilities ---
 from models.fastdvdnet import FastDVDnet
+from models.pocketdvdnet import PocketDVDnet  
 from dataloaders.fastdvdnet.utils import remove_dataparallel_wrapper
 
 def rgb_to_bgr(tensor):
@@ -265,7 +266,7 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
 
     # --- Configuration ---
-    NUM_IN_FR_EXT = 5 # Number of frames required by FastDVDnet
+    NUM_IN_FR_EXT = 5 # Number of frames required by FastDVDnet and pocketdvdnet
 
     class InferenceArgs:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -286,7 +287,7 @@ if __name__ == "__main__":
 
     # --- Model Loading ---
     try:
-        model = FastDVDnet(num_input_frames=NUM_IN_FR_EXT)
+        model = PocketDVDnet(num_input_frames=NUM_IN_FR_EXT)
 
         # Load saved weights
         checkpoint = torch.load(args.checkpoint_path, map_location=args.device, weights_only=False)

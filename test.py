@@ -4,7 +4,7 @@ import cv2
 import torch
 import torch.nn as nn
 from models.fastdvdnet import FastDVDnet
-from dataloaders.fastdvdnet.utils import *
+from models.pocketdvdnet import PocketDVDnet 
 from tqdm import tqdm
 import shutil
 from torchvision.utils import make_grid

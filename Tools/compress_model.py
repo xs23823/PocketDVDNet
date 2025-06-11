@@ -112,7 +112,7 @@ def compress(model, layer_specs):
                     setattr(parent_module, str(bn_num), new_bn)
                     print(f"  → Also compressed BN layer")
         except:
-            pass  # no BN layer or cud'nt find it
+            pass  # no BN layer or cudnt find it
     
     return compressed_model
 
@@ -207,10 +207,9 @@ def main():
         compressed_model = load_n_squish(model_path, layer_specs)
         
         if test(compressed_model, layer_specs):
-            # In your compression script, when saving:
             torch.save({
                 'model_state_dict': compressed_model.state_dict(),
-                'layer_specs': layer_specs,  # Save the compression specifications
+                'layer_specs': layer_specs, 
                 'model_config': {'num_input_frames': 5, 'num_color_ch': 3},
             }, 'compressed_fastdvdnet1.pt')
         else:
