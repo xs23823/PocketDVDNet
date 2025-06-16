@@ -55,8 +55,7 @@ def main(args):
     )
     prefetcher = CPUPrefetcher(train_loader)
 
-    model = FastDVDnet().to(device)
-
+    model = PocketDVDnet().to(device)
     trainer = Trainer(args, model, prefetcher, val_loader)
     
     if getattr(args, 'use_obproxsg', False):
@@ -64,14 +63,13 @@ def main(args):
     else:
         torch.compile(trainer.train(), mode="default")
 
-
 if __name__ == "__main__":
     # Training settings
     parser = argparse.ArgumentParser(description="PyTorch MNIST Example")
     parser.add_argument(
         "--config",
         type=str,
-        default="./configs/fastdvdnet.yaml",
+        default="./configs/adam.yaml",
         help="path to YAML config file",
     )
     args = parser.parse_args()

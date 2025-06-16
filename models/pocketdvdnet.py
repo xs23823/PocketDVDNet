@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 class PocketCvBlock(nn.Module):
-    '''Compressed (Conv2d => BN => ReLU) x 2 with exact dimensions'''
+    '''(Conv2d => BN => ReLU) x 2 '''
     def __init__(self, in_ch, mid_ch, out_ch):
         super(PocketCvBlock, self).__init__()
         self.convblock = nn.Sequential(
@@ -18,7 +18,7 @@ class PocketCvBlock(nn.Module):
         return self.convblock(x)
 
 class PocketInputCvBlock(nn.Module):
-    '''Compressed Input Block: 18 → 90 → 16'''
+    '''Input Block: 18 → 90 → 16'''
     def __init__(self, num_in_frames, num_color_ch, num_noise_ch_for_concat):
         super(PocketInputCvBlock, self).__init__()
         # Input: num_in_frames * (num_color_ch + num_noise_ch_for_concat) = 3 * (3 + 3) = 18
@@ -27,7 +27,7 @@ class PocketInputCvBlock(nn.Module):
             nn.Conv2d(18, 90, kernel_size=3, padding=1, groups=num_in_frames, bias=False),
             nn.BatchNorm2d(90),                                                  # convblock.1
             nn.ReLU(inplace=True),                                               # convblock.2
-            # convblock.3: (90, 16) from layer_specs  
+            # convblock.3: (90, 16) 
             nn.Conv2d(90, 16, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(16),                                                  # convblock.4
             nn.ReLU(inplace=True)                                                # convblock.5
@@ -37,7 +37,7 @@ class PocketInputCvBlock(nn.Module):
         return self.convblock(x)
 
 class PocketDownBlock(nn.Module):
-    '''Compressed Downscale + CvBlock'''
+    '''Compresed Downscale + CvBlock'''
     def __init__(self, in_ch, stride_out_ch, cvblock_mid_ch, cvblock_out_ch):
         super(PocketDownBlock, self).__init__()
         self.convblock = nn.Sequential(
@@ -53,7 +53,7 @@ class PocketDownBlock(nn.Module):
         return self.convblock(x)
 
 class PocketUpBlock(nn.Module):
-    '''Compressed CvBlock + Upscale'''
+    ''' CvBlock + Upscale'''
     def __init__(self, in_ch, cvblock_mid_ch, cvblock_out_ch, final_out_ch):
         super(PocketUpBlock, self).__init__()
         self.convblock = nn.Sequential(
@@ -68,15 +68,15 @@ class PocketUpBlock(nn.Module):
         return self.convblock(x)
 
 class PocketOutputCvBlock(nn.Module):
-    '''Compressed Output Block: 16 → 32 → 3'''
+    ''' Output Block: 16 → 32 → 3'''
     def __init__(self, in_ch, out_ch):
         super(PocketOutputCvBlock, self).__init__()
         self.convblock = nn.Sequential(
-            # convblock.0: (16, 32) from layer_specs
+            # convblock.0: (16, 32) 
             nn.Conv2d(in_ch, 32, kernel_size=3, padding=1, bias=False),
             nn.BatchNorm2d(32),                                                  # convblock.1
             nn.ReLU(inplace=True),                                               # convblock.2
-            # convblock.3: (32, 3) from layer_specs
+            # convblock.3: (32, 3)
             nn.Conv2d(32, out_ch, kernel_size=3, padding=1, bias=False)
         )
 
@@ -84,12 +84,12 @@ class PocketOutputCvBlock(nn.Module):
         return self.convblock(x)
 
 class PocketDenBlock(nn.Module):
-    """Compressed denoising block with exact layer_specs dimensions"""
+    """ denoising block with exact layer_specs dimensions"""
     
     def __init__(self, num_input_frames=3, num_color_ch=3, num_effective_noise_ch=1):
         super(PocketDenBlock, self).__init__()
         
-        # Build layers with exact compressed dimensions from layer_specs:
+        # Build layers with dimensions from layer_specs:
         
         # Input: 18 → 90 → 16
         self.inc = PocketInputCvBlock(num_in_frames=num_input_frames, 
@@ -142,7 +142,7 @@ class PocketDenBlock(nn.Module):
         return x
 
 class PocketDVDnet(nn.Module):
-    """Standalone Compressed FastDVDnet model with exact layer_specs dimensions hardcoded"""
+    """Standalone Compressed FastDVDnet model with dimensions hardcoded"""
     
     def __init__(self, num_input_frames=5, num_color_ch=3, noise_ch_per_frame=None):
         super(PocketDVDnet, self).__init__()
@@ -154,7 +154,6 @@ class PocketDVDnet(nn.Module):
         else:
             self.noise_ch_per_frame_in_bundle = noise_ch_per_frame
 
-        # Create compressed denoising blocks with exact layer_specs dimensions
         self.temp1 = PocketDenBlock(num_input_frames=3, 
                                    num_color_ch=self.num_color_ch, 
                                    num_effective_noise_ch=self.noise_ch_per_frame_in_bundle)

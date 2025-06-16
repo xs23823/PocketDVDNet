@@ -1,9 +1,9 @@
-# Configuration for Small FastDVDNet (now the main model)
+# Configuration for pocketdvdnet
 batch_size: 64    
-patch_size: 96
+patch_size: 160
 test_batch_size: 1000  
 epochs: 14    
-lr: 0.001 
+lr: 0.001
 gamma: 0.1
 noise_ival: [5, 55]
 val_noiseL: 25.0
@@ -16,12 +16,15 @@ seed: 1
 out_dir: "/home/imogend/Documents/Data/out_extra_data"
 valset_dir: "/home/imogend/Documents/Data/DAVIS 420p JPEG VAL"
 trainset_dir: "/home/imogend/Documents/Data/PNG_TRAINING_SEQUENCES"
-iterations: 150000   # Reduced from 2000000 - small model trains faster
-num_workers: 12
+iterations: 150000   
+num_workers: 6
 num_prefetch_queue: 16
 log_freq: 10
 
 scheduler:
   name: "StepLR"
-  step_size: 60
+  step_size: 30
   gamma: 0.5
+
+use_obproxsg: false
+reset_lr: true

@@ -1,6 +1,6 @@
 # configs/fastdvdnet.yaml
 
-# Configuration for FastDVDNet
+# Configuration for pruning FastDVDNet
 batch_size: 64    
 patch_size: 96
 test_batch_size: 1000  

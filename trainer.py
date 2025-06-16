@@ -16,7 +16,7 @@ from utils.lr_scheduler import MultiStepRestartLR, CosineAnnealingRestartLR
 from dataloaders.fastdvdnet.utils import *
 from dataloaders.noise import NoiseModel
 
-from obproxsg import OBProxSG
+from Tools.obproxsg import OBProxSG
 
 
 class Trainer:
@@ -31,11 +31,15 @@ class Trainer:
         self.epoch = start_epoch
         self.iteration = 0
         self.best_psnr = 0.0
-        self.best_sparsity = 0.0
-        self.best_sparsity_info = None  # Will store (zeros, total) for best sparsity model
-        self.is_best_sparsity = False
+        
+        self.use_obproxsg = getattr(self.args, 'use_obproxsg', False)
+        if self.use_obproxsg:
+            self.best_sparsity = 0.0
+            self.best_sparsity_info = None  # Will store (zeros, total) for best sparsity model
+            self.is_best_sparsity = False
+            self.sparsity_threshold = getattr(self.args, 'sparsity_threshold', 0.0)
+        
         self.is_best = False
-        self.sparsity_threshold = getattr(self.args, 'sparsity_threshold', 0.0)
 
         # setup optimizers and schedulers
         self.setup_optimizers()
@@ -63,11 +67,9 @@ class Trainer:
             else:
                 print(f"Params {name} will not be optimized.")
 
-        # Check if we should use OBProxSG for sparsity training
-        use_obproxsg = getattr(self.args, 'use_obproxsg', False)
-        
-        if use_obproxsg:
-            print("Using OBProxSG optimizer for sparsity-aware training")
+        # check if OBProxSG for sparsity training
+        if self.use_obproxsg:
+            print("Using OBProxSG optimizer")
             
             self.optimizer = OBProxSG(
                 backbone_params,
@@ -183,34 +185,41 @@ class Trainer:
 
     def save(self):
         """Save latest checkpoint and, if flagged, update best checkpoint."""
-    
-        sparsity, zeros, total = self.get_model_sparsity()
         
-        # bundle everything into one dict
+        # base checkpoint dict
         ckpt = {
             "epoch": self.epoch,
             "iteration": self.iteration,
             "model_state": self.model.state_dict(),
             "optim_state": self.optimizer.state_dict(),
             "sched_state": self.scheduler.state_dict(),
-            "sparsity": sparsity, 
             "best_psnr": self.best_psnr,
-            "best_sparsity": self.best_sparsity, 
         }
+        
+        # add sparsity if using OBProxSG
+        if self.use_obproxsg:
+            sparsity, zeros, total = self.get_model_sparsity()
+            ckpt["sparsity"] = sparsity
+            ckpt["best_sparsity"] = self.best_sparsity
 
         # always overwrite latest.pt
         latest_path = os.path.join(self.args.out_dir, "latest.pt")
         torch.save(ckpt, latest_path)
 
-        # if this is the best PSNR so far, also overwrite best.pt
+        #  best PSNR (both)
         if self.is_best:
-            best_path = os.path.join(self.args.out_dir, "best_psnr.pt")
+            if self.use_obproxsg:
+                # if OBProxSG, save as best_psnr.pt to distinguish from sparsity 
+                best_path = os.path.join(self.args.out_dir, "best_psnr.pt")
+            else:
+                best_path = os.path.join(self.args.out_dir, "best.pt")
             torch.save(ckpt, best_path)
 
-        # If this is the best sparsity so far, save best_sparsity.pt and record sparsity info
-        if self.is_best_sparsity:
+        #  best sparsity if OBProxSG
+        if self.use_obproxsg and self.is_best_sparsity:
             best_sparsity_path = os.path.join(self.args.out_dir, "best_sparsity.pt")
             torch.save(ckpt, best_sparsity_path)
+            sparsity, zeros, total = self.get_model_sparsity()
             self.best_sparsity_info = (zeros, total)
 
     def train(self):
@@ -228,14 +237,16 @@ class Trainer:
         pbar.close()
         tqdm.write("\nTraining complete.")
         
-        # Print sparsity info for the best sparsity model 
-        if isinstance(self.optimizer, OBProxSG) and self.best_sparsity_info:
-            zeros, total = self.best_sparsity_info
-            tqdm.write(f"Best sparsity model: {zeros} out of {total} parameters zeroed ({sparsity:.2f}%)")
-        elif isinstance(self.optimizer, OBProxSG):
-            # Fallback to current sparsity
-            sparsity, zeros, total = self.get_model_sparsity()
-            tqdm.write(f"Final model sparsity: {zeros} out of {total} parameters zeroed ({sparsity:.2f}%)")
+        #  sparsity info if OBProxSG
+        if self.use_obproxsg:
+            if self.best_sparsity_info:
+                zeros, total = self.best_sparsity_info
+                sparsity = 100.0 * zeros / total if total > 0 else 0
+                tqdm.write(f"Best sparsity model: {zeros} out of {total} parameters zeroed ({sparsity:.2f}%)")
+            else:
+                # Fallback 
+                sparsity, zeros, total = self.get_model_sparsity()
+                tqdm.write(f"Final model sparsity: {zeros} out of {total} parameters zeroed ({sparsity:.2f}%)")
 
     def train_epoch(self, pbar):
         """
@@ -248,7 +259,6 @@ class Trainer:
             batch = self.prefetcher.next()
             if batch is None:
                 break
-
             # Unpack the batch and move to device
             img_train, gt_train = batch
             img_train, gt_train = img_train.to(self.device), gt_train.to(self.device)
@@ -285,11 +295,11 @@ class Trainer:
             self.scaler.update()
 
             self.add_summary(self.writer, "loss", loss.item())
-
-            # Console logs 
+ # Console logs 
             pbar.update(1)
-            if self.iteration % 10 == 0:
+            if self.iteration % 30 == 0:  
                 self.model.apply(svd_orthogonalization)
+                
                 self.current_lr = self.get_lr()
                 pbar.set_description(f"LR: {self.current_lr} Loss: {loss.item():.3f}")
 
@@ -330,27 +340,29 @@ class Trainer:
             psnr_val /= len(self.val_loader)
             t2 = time.time()
 
-        # Calculate sparsity
-        current_sparsity, zeros, total = self.get_model_sparsity()
-
-        # Log PSNR and learning rate
-        self.writer.add_scalar("PSNR on validation data", psnr_val, self.epoch)
-        self.writer.add_scalar("Learning rate", self.current_lr, self.epoch)
-
-        # Check if current model is the best psnr
+        # Check if current model is the best PSNR (both)
         if psnr_val > self.best_psnr:
             self.best_psnr = psnr_val
             self.is_best = True
         else:
             self.is_best = False
         
-         # Check if current model is the best sparsity 
-        if psnr_val >= self.sparsity_threshold and current_sparsity > self.best_sparsity:
-            self.best_sparsity = current_sparsity
-            self.is_best_sparsity = True
-            print(f"New best sparsity: {current_sparsity:.2f}% (PSNR: {psnr_val:.4f})")
-        else:
-            self.is_best_sparsity = False
+        if self.use_obproxsg:
+            current_sparsity, zeros, total = self.get_model_sparsity()
+            
+            # check current model is the best sparsity 
+            if psnr_val >= self.sparsity_threshold and current_sparsity > self.best_sparsity:
+                self.best_sparsity = current_sparsity
+                self.is_best_sparsity = True
+                print(f"New best sparsity: {current_sparsity:.2f}% (PSNR: {psnr_val:.4f})")
+            else:
+                self.is_best_sparsity = False
+                
+            self.writer.add_scalar("sparsity_epoch", current_sparsity, self.epoch)
+
+        # log PSNR and learning rate
+        self.writer.add_scalar("PSNR on validation data", psnr_val, self.epoch)
+        self.writer.add_scalar("Learning rate", self.current_lr, self.epoch)
 
         # Log validation images
         idx = 0
@@ -376,9 +388,9 @@ class Trainer:
             "{}_noisy-gt-out".format(idx), combined, self.epoch
         )
 
-        # Log to tensorboard 
-        if isinstance(self.optimizer, OBProxSG):
-            self.writer.add_scalar("sparsity_epoch", current_sparsity, self.epoch)
+        # Create status message based on optimizer type
+        if self.use_obproxsg:
+            current_sparsity, _, _ = self.get_model_sparsity()
             status_msg = f"\n[epoch {self.epoch}] PSNR_val: {psnr_val:.4f} (Best: {self.is_best}), Sparsity: {current_sparsity:.1f}%, on {t2-t1:.2f} sec"
         else:
             status_msg = f"\n[epoch {self.epoch}] PSNR_val: {psnr_val:.4f} (Best: {self.is_best}), on {t2-t1:.2f} sec"

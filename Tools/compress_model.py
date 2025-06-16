@@ -3,34 +3,39 @@ import torch.nn as nn
 from models.fastdvdnet import FastDVDnet
 import copy
 
-def get_channel_importance(conv_layer, dim='out'):
-    """Calculate channel importance based on L1 norm of weights"""
+
+def get_channel_density(conv_layer, dim='out'):
+    """calculate channel density (1 - sparsity)"""
     weights = conv_layer.weight.data
     
     if dim == 'out':
-        importance = weights.abs().sum(dim=(1, 2, 3))
+        total_weights = weights.size(1) * weights.size(2) * weights.size(3)
+        non_zero_per_channel = (weights.abs() > 1e-6).sum(dim=(1, 2, 3))
+        density_per_channel = non_zero_per_channel.float() / total_weights
     else:  # dim == 'in'
-        importance = weights.abs().sum(dim=(0, 2, 3))
+        total_weights = weights.size(0) * weights.size(2) * weights.size(3)  
+        non_zero_per_channel = (weights.abs() > 1e-6).sum(dim=(0, 2, 3))
+        density_per_channel = non_zero_per_channel.float() / total_weights
     
-    return importance
+    return density_per_channel
 
-def important_channels(importance, n_keep):
-    """Select the most important channels"""
-    if n_keep >= len(importance):
-        return torch.arange(len(importance))
+def important_channels(density, n_keep):
+    """select channels with highest density"""
+    if n_keep >= len(density):
+        return torch.arange(len(density))
     
-    _, indices = torch.topk(importance, n_keep)
+    _, indices = torch.topk(density, n_keep)
     return indices.sort()[0]
 
 def compress_conv(old_conv, new_in_channels, new_out_channels):
     """Compress a conv layer by selecting most important channels"""
     
-    # importance scores
-    out_importance = get_channel_importance(old_conv, 'out')
-    in_importance = get_channel_importance(old_conv, 'in')
+    # density scores
+    out_density = get_channel_density(old_conv, 'out')
+    in_density = get_channel_density(old_conv, 'in')
     
-    out_indices = important_channels(out_importance, new_out_channels)
-    in_indices = important_channels(in_importance, new_in_channels)
+    out_indices = important_channels(out_density, new_out_channels)
+    in_indices = important_channels(in_density, new_in_channels)
     
     new_conv = nn.Conv2d(
         in_channels=new_in_channels,
@@ -76,7 +81,7 @@ def compress_bn(old_bn, out_indices):
     return new_bn
 
 def compress(model, layer_specs):
-    """Apply compression based on specs inputted"""
+    """Apply compression based on specs"""
     
     compressed_model = copy.deepcopy(model)
     
@@ -211,7 +216,7 @@ def main():
                 'model_state_dict': compressed_model.state_dict(),
                 'layer_specs': layer_specs, 
                 'model_config': {'num_input_frames': 5, 'num_color_ch': 3},
-            }, 'compressed_fastdvdnet1.pt')
+            }, 'compressed_fastdvdnet2.pt')
         else:
             print("Model compression failed")
             
