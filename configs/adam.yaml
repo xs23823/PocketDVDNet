@@ -13,7 +13,7 @@ dry_run: false
 
 seed: 1        
 
-out_dir: "/home/imogend/Documents/Data/out_extra_data"
+out_dir: "/home/imogend/Documents/Data/out 7 frame"
 valset_dir: "/home/imogend/Documents/Data/DAVIS 420p JPEG VAL"
 trainset_dir: "/home/imogend/Documents/Data/PNG_TRAINING_SEQUENCES"
 iterations: 150000   
@@ -27,4 +27,4 @@ scheduler:
   gamma: 0.5
 
 use_obproxsg: false
-reset_lr: true
+reset_lr: false

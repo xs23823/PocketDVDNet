@@ -5,9 +5,11 @@ import argparse
 from trainer import Trainer
 from utils.prefetcher import PrefetchDataLoader, CPUPrefetcher
 
-from models.fastdvdnet import FastDVDnet
-from models.pocketdvdnet import PocketDVDnet  
+from student.fastdvdnet import FastDVDnet
+from student.pocketdvdnet import PocketDVDnet  
 from dataloaders.fastdvdnet import DVDDataset, ValDataset, Sampler
+
+
 
 def main(args):
 

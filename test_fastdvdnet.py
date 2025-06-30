@@ -10,8 +10,7 @@ from collections import deque
 from threading import Thread, Lock # Added Lock
 
 # --- Import FastDVDnet model and utilities ---
-from models.fastdvdnet import FastDVDnet
-from models.pocketdvdnet import PocketDVDnet  
+from student import FastDVDnet, PocketDVDnet
 from dataloaders.fastdvdnet.utils import remove_dataparallel_wrapper
 
 def rgb_to_bgr(tensor):
@@ -270,9 +269,9 @@ if __name__ == "__main__":
 
     class InferenceArgs:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        checkpoint_path = '/home/imogend/Documents/Data/out_extra_data/best.pt'
+        checkpoint_path = '/home/imogend/Documents/GitHub/studfastdvdnet/student/fastdvdnet/model.pt'
         camera_index = 0
-        noise_sigma = 30.0
+        noise_sigma = 50.0
         display_width = 1280
         display_height = 720
 
@@ -287,7 +286,7 @@ if __name__ == "__main__":
 
     # --- Model Loading ---
     try:
-        model = PocketDVDnet(num_input_frames=NUM_IN_FR_EXT)
+        model = FastDVDnet(num_input_frames=NUM_IN_FR_EXT, num_color_ch=3, noise_ch_per_frame=1)
 
         # Load saved weights
         checkpoint = torch.load(args.checkpoint_path, map_location=args.device, weights_only=False)

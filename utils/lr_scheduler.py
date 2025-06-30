@@ -1,5 +1,5 @@
 """
-    LR scheduler from BasicSR https://github.com/xinntao/BasicSR
+    LR scheduler from teachers.EDVR https://github.com/xinntao/BasicSR
 """
 import math
 from collections import Counter

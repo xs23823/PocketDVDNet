@@ -19,8 +19,8 @@ class DVDDataset(Dataset):
     def __init__(
         self,
         root_dir,
-        sequence_length=5,
-        ctrl_fr_idx=2,
+        sequence_length=7, #changed for new architecture shouls only be here
+        ctrl_fr_idx=3,
         channels=3,
         apply_sequence_augmentations=True,
         crop_size=96,

@@ -44,7 +44,7 @@ def temp_denoise(model, noisyframe, sigma_noise):
 
 	return out
 
-def denoise_seq_fastdvdnet(seq, noise_std, model_temporal, temp_psz=5):
+def denoise_seq_fastdvdnet(seq, noise_std, model_temporal, temp_psz=7): #CHANGED FOR NEW ARCHITECTURE
 	r"""Denoises a sequence of frames with FastDVDnet.
 
 	Args:
@@ -108,7 +108,7 @@ def denoise_seq_fastdvdnet(seq, noise_std, model_temporal, temp_psz=5):
 	return denframes
 
 
-def normalize_augment(datain, ctrl_fr_idx=2):
+def normalize_augment(datain, ctrl_fr_idx=3): #CHANGED FOR NEW AARCHITECTURE
     """Normalizes and augments an input patch of dim [num_frames, C. H, W] in [0., 255.] to \
 		[num_frames*C. H, W] in  [0., 1.]. It also returns the central frame of the temporal \
 		patch as a ground truth.

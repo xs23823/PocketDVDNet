@@ -1,0 +1,1 @@
+2025-06-24 11:53:03,925 - /home/imogend/Documents/Data/DAVIS 420p JPEG VAL/deer, , PSNR noisy	14.151156dB, PSNR 34.927278 dB

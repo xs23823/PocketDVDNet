@@ -8,7 +8,7 @@ class NoiseModel:
     Applies a composite noise model to an input image tensor by adding several types
     of noise, including shot/read noise, uniform noise, row noise, row temporal noise,
     and periodic noise.
-    Handles input shape [B, C*F, H, W] with F=5, ensuring noise consistency across F frames.
+    Handles input shape [B, C*F, H, W] with F=7, ensuring noise consistency across F frames.
     """
 
     def __init__(self, dict_path, seed=-1):
@@ -126,7 +126,7 @@ class NoiseModel:
         self.noise_dict = self.get_noise_parameters()
         self.noise_dict = self._scale_noise_dict(self.noise_dict)
         B, CF, H, W = x.shape
-        F_frames = 5
+        F_frames = 7 #changed for new architecture, was 5
 
         if CF % F_frames != 0:
             raise ValueError(f"Input channel-frame dimension ({CF}) is not divisible by F_frames ({F_frames}).")

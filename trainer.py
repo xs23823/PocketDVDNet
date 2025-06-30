@@ -16,7 +16,8 @@ from utils.lr_scheduler import MultiStepRestartLR, CosineAnnealingRestartLR
 from dataloaders.fastdvdnet.utils import *
 from dataloaders.noise import NoiseModel
 
-from Tools.obproxsg import OBProxSG
+from optimizers.obproxsg import OBProxSG
+from optimizers.distill import PACNetTeacher, DistillationLoss
 
 
 class Trainer:
@@ -35,11 +36,21 @@ class Trainer:
         self.use_obproxsg = getattr(self.args, 'use_obproxsg', False)
         if self.use_obproxsg:
             self.best_sparsity = 0.0
-            self.best_sparsity_info = None  # Will store (zeros, total) for best sparsity model
+            self.best_sparsity_info = None
             self.is_best_sparsity = False
             self.sparsity_threshold = getattr(self.args, 'sparsity_threshold', 0.0)
         
-        self.is_best = False
+        self.use_distillation = getattr(self.args, 'use_distillation', False)
+
+        if self.use_distillation:
+            self.distill_alpha = getattr(args, 'distill_alpha', 0.7)
+            self.teacher = PACNetTeacher(self.device)  # Remove args parameter
+            self.criterion = DistillationLoss(alpha=self.distill_alpha)
+            print(f"Distillation with alpha={self.distill_alpha}")
+        else:
+            self.criterion = nn.MSELoss(reduction="sum")
+            self.teacher = None
+            print(" training ")
 
         # setup optimizers and schedulers
         self.setup_optimizers()
@@ -48,7 +59,6 @@ class Trainer:
         self.load()
 
         self.current_lr = self.get_lr()
-        self.criterion = nn.MSELoss(reduction="sum")
 
         # tensorboard
         self.summary = {}
@@ -59,7 +69,7 @@ class Trainer:
         self.noise_fn = NoiseModel("./dataloaders/predicted_labels.csv")
 
     def setup_optimizers(self):
-        """Set up optimizers - Modified to support OBProxSG."""
+        """Set up optimizers"""
         backbone_params = []
         for name, param in self.model.named_parameters():
             if param.requires_grad:
@@ -137,6 +147,17 @@ class Trainer:
                 zeros += (p == 0).sum().item()
         sparsity = 100.0 * zeros / total if total > 0 else 0
         return sparsity, zeros, total
+    
+    def compute_loss(self, output, gt_train, imgn_train, stdn, batch_size):
+        if self.use_distillation:
+            # Get teacher  output
+            teacher_output = self.teacher.teacher_targets(imgn_train, stdn)
+            
+            # Use criterion which is DistillationLoss when distillation is enabled
+            return self.criterion(output, teacher_output, gt_train)  
+            # Regular loss
+        else:
+            return self.criterion(output, gt_train) / (batch_size * 2)
 
     def add_summary(self, writer, name, val):
         """Add tensorboard summary."""
@@ -223,10 +244,8 @@ class Trainer:
             self.best_sparsity_info = (zeros, total)
 
     def train(self):
-
         pbar = range(int(self.args.iterations))
         pbar = tqdm(pbar, initial=self.iteration, dynamic_ncols=True, smoothing=0.01)
-
         while self.iteration < self.args.iterations:
             self.epoch += 1
             self.prefetcher.reset()
@@ -234,7 +253,6 @@ class Trainer:
             self.validate()
             self.save()
 
-        pbar.close()
         tqdm.write("\nTraining complete.")
         
         #  sparsity info if OBProxSG
@@ -259,37 +277,36 @@ class Trainer:
             batch = self.prefetcher.next()
             if batch is None:
                 break
-            # Unpack the batch and move to device
+                
             img_train, gt_train = batch
             img_train, gt_train = img_train.to(self.device), gt_train.to(self.device)
-
-            self.iteration += 1
-
-            # Add noise to the training sequence
+            
+            self.iteration += 1  
+            
+            # add noise
             B, _, H, W = img_train.size()
             stdn = (
                 torch.empty((B, 1, 1, 1))
                 .to(self.device)
                 .uniform_(self.args.noise_ival[0], to=self.args.noise_ival[1])
             )
+            
             # draw noise samples from std dev tensor
             noise = torch.zeros_like(img_train).to(self.device)
             noise = torch.normal(mean=noise, std=stdn.expand_as(noise))
-
+            
             # define noisy inputs
             imgn_train = img_train + noise
-            noise_map = stdn.expand((B, 15, H, W)).to(
-                self.device
-            )
-
-            # Set optimizer gradients to zero
+            noise_map = stdn.expand((B, 21, H, W)).to(self.device) #CHANGED TO 3*7 FOR NEW ARCHITECTURE
+            
+            # forward pass
             self.optimizer.zero_grad()
-
+            
             with torch.amp.autocast("cuda"):
-                output = self.model(imgn_train, noise_map)
-                loss = self.criterion(output, gt_train) / (B * 2)
-
-            # Backpropagation
+                student_output = self.model(imgn_train, noise_map)
+                loss = self.compute_loss(student_output, gt_train, imgn_train, stdn, B)
+    
+            # backprop
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
             self.scaler.update()
