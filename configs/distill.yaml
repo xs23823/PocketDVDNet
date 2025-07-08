@@ -1,8 +1,9 @@
-# Configfor ensemble distillation training
+# Configfor distillation training
+#this is just a placeholder for now
 
 # Base 
-batch_size: 12        
-patch_size: 64       
+batch_size: 4        
+patch_size: 160       
 test_batch_size: 1000  
 epochs: 14    
 lr: 0.001           
@@ -18,8 +19,8 @@ out_dir: "/home/imogend/Documents/Data/out_distill"
 valset_dir: "/home/imogend/Documents/Data/DAVIS 420p JPEG VAL"
 trainset_dir: "/home/imogend/Documents/Data/PNG_TRAINING_SEQUENCES"
 iterations: 150000      
-num_workers: 2
-num_prefetch_queue: 2 
+num_workers: 3
+num_prefetch_queue: 3 
 log_freq: 1
 
 scheduler:
@@ -27,11 +28,11 @@ scheduler:
   step_size: 25000      
   gamma: 0.8       
 
-reset_lr: false 
+reset_lr: false #reset the learning rate when resuming training
 
 # ===== DISTILLATION SETTINGS =====
 use_distillation: true          
 distill_alpha: 0.5           # how much teachers weighted in loss vs GT
 
 load_student_weights: true
-      
+loss_type: "charbonnier"

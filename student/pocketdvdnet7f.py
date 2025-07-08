@@ -1,3 +1,5 @@
+#7 frame variant of PocketDVDnet
+
 import torch
 import torch.nn as nn
 
@@ -21,7 +23,6 @@ class PocketInputCvBlock(nn.Module):
     '''Input Block: 18 → 90 → 16'''
     def __init__(self, num_in_frames, num_color_ch, num_noise_ch_for_concat):
         super(PocketInputCvBlock, self).__init__()
-        # Input: num_in_frames * (num_color_ch + num_noise_ch_for_concat) = 3 * (3 + 3) = 18
         self.convblock = nn.Sequential(
             # convblock.0: (18, 90) from layer_specs
             nn.Conv2d(18, 90, kernel_size=3, padding=1, groups=num_in_frames, bias=False),
@@ -84,12 +85,12 @@ class PocketOutputCvBlock(nn.Module):
         return self.convblock(x)
 
 class PocketDenBlock(nn.Module):
-    """ denoising block with exact layer_specs dimensions"""
+    """ denoising block"""
     
     def __init__(self, num_input_frames=3, num_color_ch=3, num_effective_noise_ch=1):
         super(PocketDenBlock, self).__init__()
         
-        # Build layers with dimensions from layer_specs:
+        # Build layers 
         
         # Input: 18 → 90 → 16
         self.inc = PocketInputCvBlock(num_in_frames=num_input_frames, 
@@ -142,9 +143,9 @@ class PocketDenBlock(nn.Module):
         return x
 
 class PocketDVDnet7(nn.Module):
-    """Standalone Compressed FastDVDnet model with dimensions hardcoded"""
+    """Standalone compressed  model """
     
-    def __init__(self, num_input_frames=5, num_color_ch=3, noise_ch_per_frame=None):
+    def __init__(self, num_input_frames=7, num_color_ch=3, noise_ch_per_frame=None):
         super(PocketDVDnet7, self).__init__()
         self.num_input_frames = num_input_frames
         self.num_color_ch = num_color_ch
@@ -202,5 +203,4 @@ class PocketDVDnet7(nn.Module):
         x31 = self.temp2(x21, x22, x23, noise_map_for_denblocks)
         x32 = self.temp2(x22, x23, x24, noise_map_for_denblocks)
 
-        return (x30 + x31 + x32) / 3.0  # average the outputs of the second stage to help wth lowloght resifual temporal noise
-
+        return x31

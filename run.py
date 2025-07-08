@@ -6,9 +6,9 @@ from trainer import Trainer
 from utils.prefetcher import PrefetchDataLoader, CPUPrefetcher
 
 from student.fastdvdnet import FastDVDnet
-from student.pocketdvdnet import PocketDVDnet  
+from student import PocketDVDnet, PocketDVDnet7
 from dataloaders.fastdvdnet import DVDDataset, ValDataset, Sampler
-
+#from optimizers.distill import PACNetTeacher
 
 
 def main(args):
@@ -29,7 +29,7 @@ def main(args):
         crop_size=args.patch_size,
     )
     bvidvc = DVDDataset(
-        root_dir="/home/imogend/Documents/Data/PNG_TRAINING_SEQUENCES",
+        root_dir="/home/imogend/Documents/Extra bits/Pacnet/PaCNet-denoiser/train",
         crop_size=args.patch_size,
     )
     train_sampler = Sampler([bvidvc, dvd], iter = True)
@@ -57,8 +57,9 @@ def main(args):
     )
     prefetcher = CPUPrefetcher(train_loader)
 
-    model = PocketDVDnet().to(device)
+    model = PocketDVDnet7().to(device)
     trainer = Trainer(args, model, prefetcher, val_loader)
+
     
     if getattr(args, 'use_obproxsg', False):
         trainer.train()  # No compile for OBProxSG
@@ -84,5 +85,6 @@ if __name__ == "__main__":
     args.val_noiseL /= 255.
     args.noise_ival[0] /= 255.
     args.noise_ival[1] /= 255.
+
 
     main(args)

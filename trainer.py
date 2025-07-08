@@ -7,7 +7,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import torchvision
-from torch.utils.tensorboard import SummaryWriter
+# from tensorboardX import SummaryWriter  # COMMENTED OUT - protobuf issues on blue pebble but uncomment for local
 import numpy as np
 
 from torch.optim.lr_scheduler import StepLR
@@ -16,8 +16,22 @@ from utils.lr_scheduler import MultiStepRestartLR, CosineAnnealingRestartLR
 from dataloaders.fastdvdnet.utils import *
 from dataloaders.noise import NoiseModel
 
-from optimizers.obproxsg import OBProxSG
-from optimizers.distill import PACNetTeacher, DistillationLoss
+from train_method.obproxsg import OBProxSG
+
+
+class CharbonnierLoss(nn.Module):
+    def __init__(self, epsilon=1e-3, reduction='sum'):
+        super().__init__()
+        self.epsilon = epsilon
+        self.reduction = reduction
+    
+    def forward(self, output, gt):
+        loss = torch.sqrt((output - gt) ** 2 + self.epsilon ** 2)
+        if self.reduction == 'sum':
+            return loss.sum()
+        elif self.reduction == 'mean':
+            return loss.mean()
+        return loss
 
 
 class Trainer:
@@ -40,17 +54,7 @@ class Trainer:
             self.is_best_sparsity = False
             self.sparsity_threshold = getattr(self.args, 'sparsity_threshold', 0.0)
         
-        self.use_distillation = getattr(self.args, 'use_distillation', False)
-
-        if self.use_distillation:
-            self.distill_alpha = getattr(args, 'distill_alpha', 0.7)
-            self.teacher = PACNetTeacher(self.device)  # Remove args parameter
-            self.criterion = DistillationLoss(alpha=self.distill_alpha)
-            print(f"Distillation with alpha={self.distill_alpha}")
-        else:
-            self.criterion = nn.MSELoss(reduction="sum")
-            self.teacher = None
-            print(" training ")
+        self.is_best = False
 
         # setup optimizers and schedulers
         self.setup_optimizers()
@@ -59,14 +63,34 @@ class Trainer:
         self.load()
 
         self.current_lr = self.get_lr()
+        
+        # setup loss function
+        self.setup_criterion()
 
-        # tensorboard
-        self.summary = {}
-        self.log_dir = os.path.join(args.out_dir, "logs")
-        self.writer = SummaryWriter(self.log_dir)
+        # tensorboard - COMMENTED OUT
+        # self.summary = {}
+        # self.log_dir = os.path.join(args.out_dir, "logs")
+        # self.writer = SummaryWriter(self.log_dir)
+        self.writer = None  # disable tensorboard
 
-        # Noise Model
+        # noise model
         self.noise_fn = NoiseModel("./dataloaders/predicted_labels.csv")
+
+    def setup_criterion(self):
+        """setup loss function based on config"""
+        loss_type = getattr(self.args, 'loss_type', 'mse').lower()
+        
+        if loss_type == 'mse':
+            self.criterion = nn.MSELoss(reduction="sum")
+        elif loss_type == 'l1':
+            self.criterion = nn.L1Loss(reduction="sum")
+        elif loss_type == 'charbonnier':
+            self.criterion = CharbonnierLoss(reduction="sum")
+        else:
+            print(f"unknown loss type {loss_type}, defaulting to mse")
+            self.criterion = nn.MSELoss(reduction="sum")
+        
+        print(f"using {loss_type} loss")
 
     def setup_optimizers(self):
         """Set up optimizers"""
@@ -147,27 +171,18 @@ class Trainer:
                 zeros += (p == 0).sum().item()
         sparsity = 100.0 * zeros / total if total > 0 else 0
         return sparsity, zeros, total
-    
-    def compute_loss(self, output, gt_train, imgn_train, stdn, batch_size):
-        if self.use_distillation:
-            # Get teacher  output
-            teacher_output = self.teacher.teacher_targets(imgn_train, stdn)
-            
-            # Use criterion which is DistillationLoss when distillation is enabled
-            return self.criterion(output, teacher_output, gt_train)  
-            # Regular loss
-        else:
-            return self.criterion(output, gt_train) / (batch_size * 2)
 
     def add_summary(self, writer, name, val):
-        """Add tensorboard summary."""
-        if name not in self.summary:
-            self.summary[name] = 0
-        self.summary[name] += val
-        n = self.args.log_freq
-        if writer is not None and self.iteration % n == 0:
-            writer.add_scalar(name, self.summary[name] / n, self.iteration)
-            self.summary[name] = 0
+        """Add tensorboard summary """
+        # tensorboard disabled
+        # if name not in self.summary:
+        #     self.summary[name] = 0
+        # self.summary[name] += val
+        # n = self.args.log_freq
+        # if writer is not None and self.iteration % n == 0:
+        #     writer.add_scalar(name, self.summary[name] / n, self.iteration)
+        #     self.summary[name] = 0
+        pass
 
     def load(self):
         """Load Model and Optimizer."""
@@ -244,8 +259,10 @@ class Trainer:
             self.best_sparsity_info = (zeros, total)
 
     def train(self):
+
         pbar = range(int(self.args.iterations))
         pbar = tqdm(pbar, initial=self.iteration, dynamic_ncols=True, smoothing=0.01)
+
         while self.iteration < self.args.iterations:
             self.epoch += 1
             self.prefetcher.reset()
@@ -253,6 +270,7 @@ class Trainer:
             self.validate()
             self.save()
 
+        pbar.close()
         tqdm.write("\nTraining complete.")
         
         #  sparsity info if OBProxSG
@@ -280,17 +298,16 @@ class Trainer:
                 
             img_train, gt_train = batch
             img_train, gt_train = img_train.to(self.device), gt_train.to(self.device)
-            
-            self.iteration += 1  
-            
-            # add noise
+
+            self.iteration += 1
+
+            # Add noise to the training sequence
             B, _, H, W = img_train.size()
             stdn = (
                 torch.empty((B, 1, 1, 1))
                 .to(self.device)
                 .uniform_(self.args.noise_ival[0], to=self.args.noise_ival[1])
             )
-            
             # draw noise samples from std dev tensor
             noise = torch.zeros_like(img_train).to(self.device)
             noise = torch.normal(mean=noise, std=stdn.expand_as(noise))
@@ -301,18 +318,18 @@ class Trainer:
             
             # forward pass
             self.optimizer.zero_grad()
-            
+
             with torch.amp.autocast("cuda"):
-                student_output = self.model(imgn_train, noise_map)
-                loss = self.compute_loss(student_output, gt_train, imgn_train, stdn, B)
-    
-            # backprop
+                output = self.model(imgn_train, noise_map)
+                loss = self.criterion(output, gt_train) / (B * 2)
+
+            # Backpropagation
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
             self.scaler.update()
 
-            self.add_summary(self.writer, "loss", loss.item())
- # Console logs 
+            # self.add_summary(self.writer, "loss", loss.item())  # COMMENTED OUT
+            # Console logs 
             pbar.update(1)
             if self.iteration % 30 == 0:  
                 self.model.apply(svd_orthogonalization)
@@ -325,7 +342,7 @@ class Trainer:
         self.update_learning_rate()
 
     def validate(self):
-        """Validate the model and log images to TensorBoard."""
+        """Validate the model """
 
         self.model.eval()
 
@@ -375,35 +392,30 @@ class Trainer:
             else:
                 self.is_best_sparsity = False
                 
-            self.writer.add_scalar("sparsity_epoch", current_sparsity, self.epoch)
+            # self.writer.add_scalar("sparsity_epoch", current_sparsity, self.epoch)  # COMMENTED OUT
 
-        # log PSNR and learning rate
-        self.writer.add_scalar("PSNR on validation data", psnr_val, self.epoch)
-        self.writer.add_scalar("Learning rate", self.current_lr, self.epoch)
+        # COMMENTED OUT - tensorboard logging
+        # self.writer.add_scalar("PSNR on validation data", psnr_val, self.epoch)
+        # self.writer.add_scalar("Learning rate", self.current_lr, self.epoch)
 
-        # Log validation images
-        idx = 0
-
-        # Log clean and noisy validation images
-        img = torchvision.utils.make_grid(
-            seq_val.data[idx].clamp(0.0, 1.0), nrow=2, normalize=False, scale_each=False
-        )
-        imgn = torchvision.utils.make_grid(
-            seqn_val.data[0][idx].clamp(0.0, 1.0),
-            nrow=2,
-            normalize=False,
-            scale_each=False,
-        )
-
-        # Log reconstructed validation results
-        irecon = torchvision.utils.make_grid(
-            out_val.data[idx].clamp(0.0, 1.0), nrow=2, normalize=False, scale_each=False
-        )
-        # combine clean, noisy, and reconstructed images into a single grid
-        combined = torch.cat((imgn.cpu(), img.cpu(), irecon.cpu()), dim=1)
-        self.writer.add_image(
-            "{}_noisy-gt-out".format(idx), combined, self.epoch
-        )
+        # COMMENTED OUT - image logging
+        # idx = 0
+        # img = torchvision.utils.make_grid(
+        #     seq_val.data[idx].clamp(0.0, 1.0), nrow=2, normalize=False, scale_each=False
+        # )
+        # imgn = torchvision.utils.make_grid(
+        #     seqn_val.data[0][idx].clamp(0.0, 1.0),
+        #     nrow=2,
+        #     normalize=False,
+        #     scale_each=False,
+        # )
+        # irecon = torchvision.utils.make_grid(
+        #     out_val.data[idx].clamp(0.0, 1.0), nrow=2, normalize=False, scale_each=False
+        # )
+        # combined = torch.cat((imgn.cpu(), img.cpu(), irecon.cpu()), dim=1)
+        # self.writer.add_image(
+        #     "{}_noisy-gt-out".format(idx), combined, self.epoch
+        # )
 
         # Create status message based on optimizer type
         if self.use_obproxsg:

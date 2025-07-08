@@ -1,4 +1,3 @@
-# configs/fastdvdnet.yaml
 
 # Configuration for pruning FastDVDNet
 batch_size: 64    
