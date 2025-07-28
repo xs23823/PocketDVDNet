@@ -20,7 +20,7 @@ teacher_dir: "/home/imogend/Documents/Extra bits/Pacnet/PaCNet-denoiser/teacher_
 gt_dir: "/home/imogend/Documents/Extra bits/Pacnet/PaCNet-denoiser/train2"
 
 out_dir: "/home/imogend/Documents/Data/out_distill"
-valset_dir: Data/DAVIS 420p JPEG VAL"
+valset_dir: "/home/imogend/Documents/Data/DAVIS 420p JPEG VAL"
 
 iterations: 100000
 num_workers: 4
