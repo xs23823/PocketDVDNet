@@ -1,38 +1,41 @@
-# Configfor distillation training
-#this is just a placeholder for now
+# configs/distill_precomputed.yaml
 
-# Base 
-batch_size: 4        
-patch_size: 160       
-test_batch_size: 1000  
-epochs: 14    
-lr: 0.001           
+# configuration for distillation with precomputed pacnet outputs
+batch_size: 32
+patch_size: 160
+test_batch_size: 1000
+epochs: 14
+lr: 0.0005  # lower lr for fine-tuning
 gamma: 0.1
-noise_ival: [5, 55]     
+noise_ival: [5, 55]  # not used in distillation
 val_noiseL: 25.0
 
-no_accel: false      
-dry_run: false      
-seed: 42               
+no_accel: false
+dry_run: false
+seed: 42
 
-out_dir: "/home/imogend/Documents/Data/out_distill"  
-valset_dir: "/home/imogend/Documents/Data/DAVIS 420p JPEG VAL"
-trainset_dir: "/home/imogend/Documents/Data/PNG_TRAINING_SEQUENCES"
-iterations: 150000      
-num_workers: 3
-num_prefetch_queue: 3 
-log_freq: 1
+# paths to precomputed data
+noisy_dir: "/home/imogend/Documents/Extra bits/Pacnet/PaCNet-denoiser/teacher_precomputed/noisy_50"
+teacher_dir: "/home/imogend/Documents/Extra bits/Pacnet/PaCNet-denoiser/teacher_precomputed/denoised_50"
+gt_dir: "/home/imogend/Documents/Extra bits/Pacnet/PaCNet-denoiser/train2"
+
+out_dir: "/home/imogend/Documents/Data/out_distill"
+valset_dir: Data/DAVIS 420p JPEG VAL"
+
+iterations: 100000
+num_workers: 4
+num_prefetch_queue: 8
+log_freq: 10
 
 scheduler:
   name: "StepLR"
-  step_size: 25000      
-  gamma: 0.8       
+  step_size: 20000
+  gamma: 0.8
 
-reset_lr: false #reset the learning rate when resuming training
+# distillation settings
+use_distillation: true
+distill_alpha: 0.7  # weight for teacher loss (0.7 teacher, 0.3 gt)
+loss_type: "mse"  # or "l1" or "charbonnier"
 
-# ===== DISTILLATION SETTINGS =====
-use_distillation: true          
-distill_alpha: 0.5           # how much teachers weighted in loss vs GT
-
-load_student_weights: true
-loss_type: "charbonnier"
+reset_lr: false
+use_obproxsg: false
