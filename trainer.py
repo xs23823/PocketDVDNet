@@ -19,7 +19,7 @@ from dataloaders.noise import NoiseModel
 from train_method.obproxsg import OBProxSG
 class DistillationLoss(nn.Module):
     """balanced loss between teacher and ground truth"""
-    def __init__(self, alpha=0.5, loss_type='mse'):
+    def __init__(self, alpha=0.7, loss_type='mse'):
         super().__init__()
         self.alpha = alpha
         
@@ -109,7 +109,8 @@ class Trainer:
         self.summary = {}
         self.log_dir = os.path.join(args.out_dir, "logs")
         self.writer = SummaryWriter(self.log_dir)
-        self.writer = None  # disable tensorboard
+        # enable tensorboard
+
 
         # noise model
         self.noise_fn = NoiseModel("./dataloaders/predicted_labels.csv")
@@ -346,9 +347,9 @@ class Trainer:
                 gt_target = batch['gt_target'].to(self.device)
                 
                 B, CF, H, W = noisy_input.shape
-                
-                # create noise map for model (using fixed std as pacnet was trained on sigma 30)
-                noise_std = 30.0 / 255.0  # pacnet default
+
+                # create noise map for model (using fixed std as pacnet was trained on sigma 50)
+                noise_std = 50.0 / 255.0  # pacnet default
                 noise_map = torch.full((B, 21, H, W), noise_std, device=self.device)
                 
                 # forward pass
@@ -384,7 +385,12 @@ class Trainer:
             self.scaler.scale(loss).backward()
             self.scaler.step(self.optimizer)
             self.scaler.update()
-            
+
+            # ADD THIS LOGGING BLOCK
+            if self.writer is not None:
+                self.writer.add_scalar('Train/Loss', loss.item(), self.iteration)
+                self.writer.add_scalar('Train/Learning_Rate', self.get_lr(), self.iteration)
+
             # logging
             pbar.update(1)
             if self.iteration % 30 == 0:
@@ -396,30 +402,87 @@ class Trainer:
         self.update_learning_rate()
 
     def validate(self):
-        """validate the model - always adds noise for validation"""
+        """validate the model - match teacher's noise generation"""
         self.model.eval()
         
         psnr_val = 0
         t1 = time.time()
         
+        # For visualization
+        visualization_done = False
+        
         with torch.no_grad():
-            for seq_val in tqdm(self.val_loader, leave=False, desc="Validating"):
-                # validation always adds noise since val sequences are clean
-                noise = torch.FloatTensor(seq_val.size()).normal_(
-                    mean=0, std=self.args.val_noiseL
-                )
-                seqn_val = seq_val + noise
+            for i, seq_val in enumerate(tqdm(self.val_loader, leave=False, desc="Validating")):
+                # For distillation, we should match the teacher's noise generation exactly
+                if self.use_distillation:
+                    # Generate noise exactly like the teacher did
+                    if self.args.val_noiseL <= 1.0:
+    # Already divided
+                        noise = self.args.val_noiseL * torch.randn_like(seq_val)
+                    else:
+                        # Needs division like in teacher code
+                        noise = (self.args.val_noiseL / 255.0) * torch.randn_like(seq_val)
+                    seqn_val = seq_val + noise
+                    # Apply clipping if the teacher used it
+                    seqn_val = torch.clamp(seqn_val, min=0, max=1)
+                else:
+                    # standard training mode - keep original noise addition
+                    noise = torch.FloatTensor(seq_val.size()).normal_(
+                        mean=0, std=self.args.val_noiseL
+                    )
+                    seqn_val = seq_val + noise
+                
                 seqn_val = seqn_val.to(self.device, non_blocking=True)
                 
                 # prepare noise standard deviation tensor
                 sigma_noise = torch.tensor(
                     [self.args.val_noiseL], dtype=torch.float32, device=self.device
                 )
-                
+                    
                 # perform denoising
                 out_val = denoise_seq_fastdvdnet(
                     seq=seqn_val[0], noise_std=sigma_noise, model_temporal=self.model
                 )
+                
+                # Save TensorBoard visualization using the first batch only
+                if self.writer is not None and i == 0 and not visualization_done:
+                    try:
+                        # Use this batch for visualization instead of loading a new one
+                        # select middle frame for display
+                        idx = len(out_val) // 2  # middle frame
+                        
+                        # Detach and move to CPU to free up GPU memory
+                        img_clean = torchvision.utils.make_grid(
+                            seq_val[0][idx:idx+1].cpu().clamp(0.0, 1.0), 
+                            nrow=1, normalize=False, scale_each=False
+                        )
+                        img_noisy = torchvision.utils.make_grid(
+                            seqn_val[0][idx:idx+1].cpu().clamp(0.0, 1.0),
+                            nrow=1, normalize=False, scale_each=False
+                        )
+                        img_denoised = torchvision.utils.make_grid(
+                            out_val[idx:idx+1].cpu().clamp(0.0, 1.0), 
+                            nrow=1, normalize=False, scale_each=False
+                        )
+                        
+                        # combine into single image: noisy | clean | denoised
+                        combined = torch.cat((img_noisy, img_clean, img_denoised), dim=2)
+                        self.writer.add_image(
+                            'Validation/Noisy-Clean-Denoised', combined, self.epoch
+                        )
+                        
+                        # also log individual images for better viewing
+                        self.writer.add_image('Validation/Clean', img_clean, self.epoch)
+                        self.writer.add_image('Validation/Noisy', img_noisy, self.epoch)
+                        self.writer.add_image('Validation/Denoised', img_denoised, self.epoch)
+                        
+                        visualization_done = True
+                    except RuntimeError as e:
+                        # If we still get OOM, just skip visualization
+                        print(f"Warning: Skipping visualization due to: {e}")
+                    
+                    # Force garbage collection
+                    torch.cuda.empty_cache()
                 
                 # calculate psnr
                 psnr_val += batch_psnr(out_val.cpu(), seq_val.squeeze_(), 1.0)
@@ -434,6 +497,14 @@ class Trainer:
         else:
             self.is_best = False
         
+        # log scalar metrics
+        if self.writer is not None:
+            self.writer.add_scalar('Validation/PSNR', psnr_val, self.epoch)
+            if self.use_obproxsg:
+                current_sparsity, _, _ = self.get_model_sparsity()
+                self.writer.add_scalar('Validation/Sparsity', current_sparsity, self.epoch)
+        
+      
         # sparsity tracking if using obproxsg
         if self.use_obproxsg:
             current_sparsity, zeros, total = self.get_model_sparsity()

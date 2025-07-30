@@ -6,7 +6,7 @@ from tqdm import tqdm
 import torch.nn as nn
 import os
 from student.fastdvdnet import FastDVDnet
-from student.pocketdvdnet import PocketDVDnet 
+from student.pocketdvdnet7f import PocketDVDnet7 
 from dataloaders.fastdvdnet.utils import *
 from torchvision.utils import make_grid
 
@@ -89,14 +89,14 @@ def find_all_leaf_dirs(root):
 if __name__ == "__main__":
 	parser = argparse.ArgumentParser(description="Denoise a sequence with FastDVDnet")
 	parser.add_argument("--model_file", type=str,
-						default="/home/imogend/Documents/Data/pocketdvd checkpoints/34.3.pt",
+						default="/home/imogend/Documents/Data/out_distill/best.pt",
 						help='path to model of the pretrained denoiser')
 	parser.add_argument("-i","--test_path", type=str, default="/home/imogend/Documents/Data/DAVIS 420p JPEG VAL/deer",
 						help='path to sequence to denoise')
 	parser.add_argument("--suffix", type=str, default="", help='suffix to add to output name')
 	parser.add_argument("--max_num_fr_per_seq", type=int, default=100,
 						help='max number of frames to load per sequence')
-	parser.add_argument("--noise_sigma", type=float, default=90, help='noise level used on test set')
+	parser.add_argument("--noise_sigma", type=float, default=50, help='noise level used on test set')
 	parser.add_argument("--dont_save_results", action='store_true', help="don't save output images")
 	parser.add_argument("--save_noisy", action='store_true', help="save noisy frames")
 	parser.add_argument("--no_gpu", action='store_true', help="run model on CPU")
