@@ -5,7 +5,7 @@ batch_size: 32
 patch_size: 160
 test_batch_size: 1000
 epochs: 14
-lr: 0.001  # lower lr for fine-tuning
+lr: 0.001 # lower lr for fine-tuning
 gamma: 0.1
 noise_ival: [5, 55]  # not used in distillation
 val_noiseL: 50
@@ -29,13 +29,13 @@ log_freq: 10
 
 scheduler:
   name: "StepLR"
-  step_size: 20000
-  gamma: 0.8
+  step_size: 30
+  gamma: 0.6
 
 # distillation settings
 use_distillation: true
-distill_alpha: 0.7  # weight for teacher loss (0.7 teacher, 0.3 gt)
-loss_type: "mse"  # or "l1" or "charbonnier"
+distill_alpha: 0.3  # weight for teacher loss (0.8 teacher, 0.2 gt)
+loss_type: "charbonnier"  # or "l1" or "charbonnier"
 
-reset_lr: false
+reset_lr: true
 use_obproxsg: false

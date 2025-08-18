@@ -19,7 +19,16 @@ from dataloaders.noise import NoiseModel
 from train_method.obproxsg import OBProxSG
 class DistillationLoss(nn.Module):
     """balanced loss between teacher and ground truth"""
-    def __init__(self, alpha=0.7, loss_type='mse'):
+    def __init__(self, alpha=None, loss_type=None, config=None):
+        # Accept config dict or object for flexibility
+        if config is not None:
+            self.alpha = getattr(config, 'distill_alpha', 0.4) if not isinstance(config, dict) else config.get('distill_alpha', 0.5)
+            loss_type = getattr(config, 'loss_type', 'charbonnier') if not isinstance(config, dict) else config.get('loss_type', 'charbonnier')
+        else:
+            self.alpha = 0.5 if alpha is None else alpha
+            loss_type = 'charbonnier' if loss_type is None else loss_type
+
+        super().__init__()
         super().__init__()
         self.alpha = alpha
         
