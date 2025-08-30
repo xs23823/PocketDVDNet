@@ -1,0 +1,3 @@
+[submodule "Shift-Net1"]
+	path = Shift-Net1
+	url = https://github.com/dasongli1/Shift-Net.git

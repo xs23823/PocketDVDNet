@@ -5,7 +5,8 @@ import argparse
 from trainer import Trainer
 from utils.prefetcher import PrefetchDataLoader, CPUPrefetcher
 
-from student import PocketDVDnet7
+# Replace specific model import with general student import
+from student import PocketDVDnet, PocketDVDnet7
 from dataloaders.fastdvdnet import ValDataset
 from dataloaders.distill_dataloader import DistillationDataset
 
@@ -20,8 +21,12 @@ def main(args):
         print("No accelerator found, using CPU")
         device = torch.device("cpu")
 
+    # Get sequence length from config
+    sequence_length = getattr(args, 'sequence_length', 5)  # Default to 5 if not specified
+    print(f"Using sequence length: {sequence_length}")
+
     # validation dataset (unchanged)
-    val_dataset = ValDataset(valsetdir=args.valset_dir, gray_mode=False)
+    val_dataset = ValDataset(valsetdir=args.valset_dir, gray_mode=False, num_input_frames=sequence_length)
     
     # training dataset
     if getattr(args, 'use_distillation', False):
@@ -30,7 +35,8 @@ def main(args):
             noisy_dir=args.noisy_dir,
             teacher_dir=args.teacher_dir,
             gt_dir=args.gt_dir,
-            sequence_length=7,  # for pocketdvdnet7
+            sequence_length=sequence_length,
+            ctrl_fr_idx=sequence_length // 2,  # Center frame
             crop_size=args.patch_size
         )
     else:
@@ -38,6 +44,8 @@ def main(args):
         from dataloaders.fastdvdnet import DVDDataset, Sampler
         dvd = DVDDataset(
             root_dir=args.trainset_dir,
+            sequence_length=sequence_length,
+            ctrl_fr_idx=sequence_length // 2,  # Center frame
             crop_size=args.patch_size,
         )
         # additional datasets if needed
@@ -64,8 +72,15 @@ def main(args):
     
     prefetcher = CPUPrefetcher(train_loader)
 
-    # model
-    model = PocketDVDnet7().to(device)
+    # model - dynamically select based on sequence_length
+    if sequence_length == 7:
+        print("Using PocketDVDnet7 model (7-frame)")
+        model = PocketDVDnet7(num_input_frames=sequence_length).to(device)
+    elif sequence_length == 5:
+        print("Using PocketDVDnet model (5-frame)")
+        model = PocketDVDnet(num_input_frames=sequence_length).to(device)
+    else:
+        raise ValueError(f"Unsupported sequence length: {sequence_length}. Must be 5 or 7.")
     
     # optionally load pretrained weights for fine-tuning
     if getattr(args, 'pretrained_path', None):

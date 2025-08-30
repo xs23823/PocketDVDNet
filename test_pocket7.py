@@ -7,10 +7,12 @@ import torch.nn as nn
 import os
 from student.fastdvdnet import FastDVDnet
 from student.pocketdvdnet7f import PocketDVDnet7 
+from student.pocketdvdnet import PocketDVDnet
 from dataloaders.fastdvdnet.utils import *
 from torchvision.utils import make_grid
 
-NUM_IN_FR_EXT = 7 # 7 or 5 depending on model version
+# Will be set by CLI argument instead of constant
+# NUM_IN_FR_EXT = 7
 MC_ALGO = 'DeepFlow' # motion estimation algorithm
 OUTIMGEXT = '.png' # output images format
 
@@ -38,7 +40,18 @@ def test_fastdvdnet(**args):
 		os.makedirs(args['save_path'])
 	device = torch.device('cuda' if not args['no_gpu'] and torch.cuda.is_available() else 'cpu')
 	print('Loading model ...')
-	model_temp = PocketDVDnet7(num_input_frames=NUM_IN_FR_EXT).to(device)
+	
+	# Select model based on sequence length
+	num_input_frames = args['num_input_frames']
+	if num_input_frames == 7:
+		model_temp = PocketDVDnet7(num_input_frames=num_input_frames).to(device)
+		print(f"Using PocketDVDnet7 with {num_input_frames} input frames")
+	elif num_input_frames == 5:
+		model_temp = PocketDVDnet(num_input_frames=num_input_frames).to(device)
+		print(f"Using PocketDVDnet with {num_input_frames} input frames")
+	else:
+		raise ValueError(f"Unsupported number of input frames: {num_input_frames}. Must be 5 or 7.")
+	
 	state_temp_dict = torch.load(args['model_file'], map_location=device, weights_only=False)
 	if "module." in list(state_temp_dict.keys())[0]:
 		state_temp_dict = remove_dataparallel_wrapper(state_temp_dict)
@@ -56,7 +69,7 @@ def test_fastdvdnet(**args):
 		noisestd = torch.FloatTensor([args['noise_sigma']]).to(device)
 		denframes = denoise_seq_fastdvdnet(seq=seqn,
 										noise_std=noisestd,
-										temp_psz=NUM_IN_FR_EXT,
+										temp_psz=num_input_frames,
 										model_temporal=model_temp)
 	stop_time = time.time()
 	psnr = batch_psnr(denframes, seq, 1.)
@@ -96,6 +109,8 @@ if __name__ == "__main__":
 	parser.add_argument("--suffix", type=str, default="", help='suffix to add to output name')
 	parser.add_argument("--max_num_fr_per_seq", type=int, default=100,
 						help='max number of frames to load per sequence')
+	parser.add_argument("--num_input_frames", type=int, default=7,
+						help='number of input frames (5 or 7)')
 	parser.add_argument("--noise_sigma", type=float, default=50, help='noise level used on test set')
 	parser.add_argument("--dont_save_results", action='store_true', help="don't save output images")
 	parser.add_argument("--save_noisy", action='store_true', help="save noisy frames")
@@ -108,7 +123,7 @@ if __name__ == "__main__":
 	argspar = parser.parse_args()
 	argspar.noise_sigma /= 255.
 
-	print("\n### Testing PocketDVDnet model ###")
+	print(f"\n### Testing {'PocketDVDnet7' if argspar.num_input_frames == 7 else 'PocketDVDnet'} model ###")
 
 	# Check if test_path contains only folders (recursively process all leaf dirs)
 	if is_folder_only(argspar.test_path):

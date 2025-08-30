@@ -60,7 +60,7 @@ class DistillationLoss(nn.Module):
 
 
 class CharbonnierLoss(nn.Module):
-    def __init__(self, epsilon=1e-3, reduction='sum'):
+    def __init__(self, epsilon=1e-4, reduction='sum'):
         super().__init__()
         self.epsilon = epsilon
         self.reduction = reduction
@@ -87,6 +87,11 @@ class Trainer:
         self.iteration = 0
         self.best_psnr = 0.0
         
+        # Get sequence length from model or config
+        self.sequence_length = getattr(self.args, 'sequence_length', 
+                                     getattr(self.model, 'num_input_frames', 5))
+        self.ctrl_fr_idx = self.sequence_length // 2  # Center frame index
+        
         self.use_obproxsg = getattr(self.args, 'use_obproxsg', False)
         if self.use_obproxsg:
             self.best_sparsity = 0.0
@@ -97,6 +102,7 @@ class Trainer:
         if self.use_distillation:
             self.distill_alpha = getattr(self.args, 'distill_alpha', 0.5)
             print(f"distillation enabled with alpha={self.distill_alpha}")
+            print(f"using sequence length: {self.sequence_length}, center frame index: {self.ctrl_fr_idx}")
 
 
         

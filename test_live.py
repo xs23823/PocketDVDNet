@@ -264,7 +264,7 @@ if __name__ == "__main__":
     torch.backends.cudnn.benchmark = True
 
     # --- Configuration ---
-    NUM_IN_FR_EXT = 7 # Number of frames required by pocketdvdnet
+    # NUM_IN_FR_EXT = 7 # Number of frames required by pocketdvdnet
 
     class InferenceArgs:
         device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -273,6 +273,7 @@ if __name__ == "__main__":
         noise_sigma = 30.0
         display_width = 1280
         display_height = 720
+        num_input_frames = 7  # Number of frames in the sequence (5 or 7)
 
 
     args = InferenceArgs()
@@ -282,10 +283,21 @@ if __name__ == "__main__":
     print(f"Loading checkpoint: {args.checkpoint_path}")
     print(f"Using camera index: {args.camera_index}")
     print(f"Using noise sigma: {args.noise_sigma * 255.0}") # Print original sigma
+    print(f"Using {args.num_input_frames} input frames")
 
     # --- Model Loading ---
     try:
-        model = PocketDVDnet7(num_input_frames=NUM_IN_FR_EXT, num_color_ch=3, noise_ch_per_frame=3)
+        # Select the appropriate model based on num_input_frames
+        if args.num_input_frames == 7:
+            from student.pocketdvdnet7f import PocketDVDnet7
+            model = PocketDVDnet7(num_input_frames=args.num_input_frames, num_color_ch=3, noise_ch_per_frame=3)
+            print(f"Using PocketDVDnet7 model ({args.num_input_frames} frames)")
+        elif args.num_input_frames == 5:
+            from student.pocketdvdnet import PocketDVDnet
+            model = PocketDVDnet(num_input_frames=args.num_input_frames, num_color_ch=3, noise_ch_per_frame=3)
+            print(f"Using PocketDVDnet model ({args.num_input_frames} frames)")
+        else:
+            raise ValueError(f"Unsupported number of input frames: {args.num_input_frames}. Must be 5 or 7.")
 
         # Load saved weights
         checkpoint = torch.load(args.checkpoint_path, map_location=args.device, weights_only=False)
@@ -322,5 +334,8 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"Error loading model: {e}")
         exit()
+    
+    # Set NUM_IN_FR_EXT for main function based on args
+    NUM_IN_FR_EXT = args.num_input_frames
     
     main(model)

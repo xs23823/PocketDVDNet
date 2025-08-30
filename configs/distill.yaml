@@ -1,7 +1,7 @@
 # configs/distill_precomputed.yaml
 
 # configuration for distillation with precomputed pacnet outputs
-batch_size: 32
+batch_size: 7
 patch_size: 160
 test_batch_size: 1000
 epochs: 14
@@ -34,8 +34,9 @@ scheduler:
 
 # distillation settings
 use_distillation: true
-distill_alpha: 0.3  # weight for teacher loss (0.8 teacher, 0.2 gt)
+distill_alpha: 0.4  # weight for teacher loss (0.8 teacher, 0.2 gt)
 loss_type: "charbonnier"  # or "l1" or "charbonnier"
 
 reset_lr: true
 use_obproxsg: false
+sequence_length: 7

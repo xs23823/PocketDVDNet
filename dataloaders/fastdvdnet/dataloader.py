@@ -19,8 +19,8 @@ class DVDDataset(Dataset):
     def __init__(
         self,
         root_dir,
-        sequence_length=7, #changed for new architecture shouls only be here
-        ctrl_fr_idx=3,
+        sequence_length=5, # Default to 5, will be overridden by config
+        ctrl_fr_idx=None,  # If None, will calculate based on sequence_length
         channels=3,
         apply_sequence_augmentations=True,
         crop_size=96,
@@ -30,7 +30,7 @@ class DVDDataset(Dataset):
             root_dir (string): Directory with all the images or parent of scene directories.
             sequence_length (int): Number of frames per sequence. Default is 5.
             ctrl_fr_idx (int): Index of the center frame in the sequence to be used as ground truth.
-                               Default is 2 (the 3rd frame in a 0-indexed sequence of 5).
+                              If None, will be calculated as sequence_length // 2.
             channels (int): Number of image channels (e.g., 3 for RGB, 1 for grayscale).
             apply_sequence_augmentations (bool): Whether to apply the sequence-level geometric/noise augmentations.
             crop_size (tuple): Tuple (height, width) specifying the size of the crop. Default is None (no cropping).
@@ -38,7 +38,13 @@ class DVDDataset(Dataset):
 
         self.root_dir = Path(root_dir)
         self.sequence_length = sequence_length
-        self.ctrl_fr_idx = ctrl_fr_idx
+        
+        # Calculate center frame index if not provided
+        if ctrl_fr_idx is None:
+            self.ctrl_fr_idx = self.sequence_length // 2
+        else:
+            self.ctrl_fr_idx = ctrl_fr_idx
+            
         self.channels = channels
         self.apply_sequence_augmentations = apply_sequence_augmentations
         self.crop_size = (crop_size, crop_size) if isinstance(crop_size, int) else crop_size
