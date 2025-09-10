@@ -21,11 +21,11 @@ class PocketCvBlock(nn.Module):
 
 class PocketInputCvBlock(nn.Module):
     '''Input Block: 18 → 90 → 16'''
-    def __init__(self, num_in_frames, num_color_ch, num_noise_ch_for_concat):
+    def __init__(self, num_in_frames):
         super(PocketInputCvBlock, self).__init__()
         self.convblock = nn.Sequential(
             # convblock.0: (18, 90) from layer_specs
-            nn.Conv2d(18, 90, kernel_size=3, padding=1, groups=num_in_frames, bias=False),
+            nn.Conv2d(9, 90, kernel_size=3, padding=1, groups=num_in_frames, bias=False),
             nn.BatchNorm2d(90),                                                  # convblock.1
             nn.ReLU(inplace=True),                                               # convblock.2
             # convblock.3: (90, 16) 
@@ -87,16 +87,13 @@ class PocketOutputCvBlock(nn.Module):
 class PocketDenBlock(nn.Module):
     """ denoising block"""
     
-    def __init__(self, num_input_frames=3, num_color_ch=3, num_effective_noise_ch=1):
+    def __init__(self, num_input_frames=3, num_color_ch=3):
         super(PocketDenBlock, self).__init__()
         
         # Build layers 
         
         # Input: 18 → 90 → 16
-        self.inc = PocketInputCvBlock(num_in_frames=num_input_frames, 
-                                     num_color_ch=num_color_ch, 
-                                     num_noise_ch_for_concat=num_effective_noise_ch)
-        
+        self.inc = PocketInputCvBlock(num_in_frames=num_input_frames)        
         # DownBlock0: 16 → 32, CvBlock: 32 → 32 → 32  
         self.downc0 = PocketDownBlock(in_ch=16, stride_out_ch=32, 
                                      cvblock_mid_ch=32, cvblock_out_ch=32)
@@ -125,9 +122,9 @@ class PocketDenBlock(nn.Module):
         for _, m in enumerate(self.modules()):
             self.weight_init(m)
 
-    def forward(self, in0, in1, in2, noise_map):
+    def forward(self, in0, in1, in2):
         # Input convolution block
-        x0 = self.inc(torch.cat((in0, noise_map, in1, noise_map, in2, noise_map), dim=1))
+        x0 = self.inc(torch.cat((in0, in1, in2), dim=1))
         # Downsampling
         x1 = self.downc0(x0)
         x2 = self.downc1(x1)
@@ -145,22 +142,13 @@ class PocketDenBlock(nn.Module):
 class PocketDVDnet7(nn.Module):
     """Standalone compressed  model """
     
-    def __init__(self, num_input_frames=7, num_color_ch=3, noise_ch_per_frame=None):
+    def __init__(self, num_input_frames=7, num_color_ch=3):
         super(PocketDVDnet7, self).__init__()
         self.num_input_frames = num_input_frames
         self.num_color_ch = num_color_ch
 
-        if noise_ch_per_frame is None:
-            self.noise_ch_per_frame_in_bundle = num_color_ch
-        else:
-            self.noise_ch_per_frame_in_bundle = noise_ch_per_frame
-
-        self.temp1 = PocketDenBlock(num_input_frames=3, 
-                                   num_color_ch=self.num_color_ch, 
-                                   num_effective_noise_ch=self.noise_ch_per_frame_in_bundle)
-        self.temp2 = PocketDenBlock(num_input_frames=3, 
-                                   num_color_ch=self.num_color_ch, 
-                                   num_effective_noise_ch=self.noise_ch_per_frame_in_bundle)
+        self.temp1 = PocketDenBlock(num_input_frames=3, num_color_ch=self.num_color_ch)
+        self.temp2 = PocketDenBlock(num_input_frames=3, num_color_ch=self.num_color_ch)
         
         # Initialize weights
         self.reset_params()
@@ -174,7 +162,7 @@ class PocketDVDnet7(nn.Module):
         for _, m in enumerate(self.modules()):
             self.weight_init(m)
 
-    def forward(self, x, noise_map_bundle):
+    def forward(self, x):
         # Unpack inputs
         frames = tuple(x[:, self.num_color_ch*m : self.num_color_ch*(m+1), :, :] 
                        for m in range(self.num_input_frames))
@@ -185,22 +173,22 @@ class PocketDVDnet7(nn.Module):
         x0, x1, x2, x3, x4, x5, x6 = frames[0], frames[1], frames[2], frames[3], frames[4], frames[5], frames[6]
 
         # Extract noise map for central frame
-        center_frame_index_in_sequence = self.num_input_frames // 2
-        start_channel_idx = center_frame_index_in_sequence * self.noise_ch_per_frame_in_bundle
-        end_channel_idx = start_channel_idx + self.noise_ch_per_frame_in_bundle
-        noise_map_for_denblocks = noise_map_bundle[:, start_channel_idx:end_channel_idx, :, :]
+        # center_frame_index_in_sequence = self.num_input_frames // 2
+        # start_channel_idx = center_frame_index_in_sequence * self.noise_ch_per_frame_in_bundle
+        # end_channel_idx = start_channel_idx + self.noise_ch_per_frame_in_bundle
+        
 
         # First stage
-        x20 = self.temp1(x0, x1, x2, noise_map_for_denblocks)
-        x21 = self.temp1(x1, x2, x3, noise_map_for_denblocks)
-        x22 = self.temp1(x2, x3, x4, noise_map_for_denblocks)
-        x23 = self.temp1(x3, x4, x5, noise_map_for_denblocks)
-        x24 = self.temp1(x4, x5, x6, noise_map_for_denblocks)
+        # x20 = self.temp1(x0, x1, x2)
+        x21 = self.temp1(x1, x2, x3)
+        x22 = self.temp1(x2, x3, x4)
+        x23 = self.temp1(x3, x4, x5)
+        # x24 = self.temp1(x4, x5, x6)
 
 
         # Second stage
-        x30 = self.temp2(x20, x21, x22, noise_map_for_denblocks)
-        x31 = self.temp2(x21, x22, x23, noise_map_for_denblocks)
-        x32 = self.temp2(x22, x23, x24, noise_map_for_denblocks)
+        # x30 = self.temp2(x20, x21, x22)
+        x31 = self.temp2(x21, x22, x23)
+        # x32 = self.temp2(x22, x23, x24)
 
         return x31

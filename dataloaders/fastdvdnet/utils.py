@@ -18,94 +18,91 @@ from tensorboardX import SummaryWriter
 
 IMAGETYPES = ("*.bmp", "*.png", "*.jpg", "*.jpeg", "*.tif")  # Supported image types
 
-def temp_denoise(model, noisyframe, sigma_noise):
-	'''Encapsulates call to denoising model and handles padding.
-		Expects noisyframe to be normalized in [0., 1.]
-	'''
-	# make size a multiple of four (we have two scales in the denoiser)
-	sh_im = noisyframe.size()
-	expanded_h = sh_im[-2]%4
-	if expanded_h:
-		expanded_h = 4-expanded_h
-	expanded_w = sh_im[-1]%4
-	if expanded_w:
-		expanded_w = 4-expanded_w
-	padexp = (0, expanded_w, 0, expanded_h)
-	noisyframe = F.pad(input=noisyframe, pad=padexp, mode='reflect')
-	sigma_noise = F.pad(input=sigma_noise, pad=padexp, mode='reflect')
+def temp_denoise(model, noisy_frame):
+    """
+    Encapsulates call to denoising model and handles padding + patch-based tiling.
+    Expects noisy_frame normalized in [0., 1.].
+    noisy_frame: [1, N*C, H, W]
+    noise_map:   [1, 1, H, W] or compatible
+    Returns:     [1, C, H, W]
+    """
+    sh_im = noisy_frame.size()
+    H, W = sh_im[-2], sh_im[-1]
 
-	# denoise
-	out = torch.clamp(model(noisyframe, sigma_noise), 0., 1.)
+    # make divisible by 4
+    expanded_h = H % 4
+    if expanded_h:
+        expanded_h = 4 - expanded_h
+    expanded_w = W % 4
+    if expanded_w:
+        expanded_w = 4 - expanded_w
+    padexp = (0, expanded_w, 0, expanded_h)
+    noisy_frame = F.pad(noisy_frame, padexp, mode='reflect')
+    _, _, H_pad, W_pad = noisy_frame.shape
 
-	if expanded_h:
-		out = out[:, :, :-expanded_h, :]
-	if expanded_w:
-		out = out[:, :, :, :-expanded_w]
+    # === Patch-based tiling (like infer.py) ===
+    pad_h = 32 - (H_pad // 2 % 16)
+    pad_w = 32 - (W_pad // 2 % 16)
 
-	return out
+    output = torch.zeros((1, noisy_frame.size(1) // 7, H_pad, W_pad), device=noisy_frame.device)
+    # print(noisy_frame[:, :, 0:H_pad//2+pad_h, 0:W_pad//2+pad_w].shape,
+    #                 noise_map[:, :, 0:H_pad//2+pad_h, 0:W_pad//2+pad_w].shape)
+    # Quadrants
+    output1 = model(noisy_frame[:, :, 0:H_pad//2+pad_h, 0:W_pad//2+pad_w])
+    output2 = model(noisy_frame[:, :, 0:H_pad//2+pad_h, W_pad//2-pad_w:])
+    output3 = model(noisy_frame[:, :, H_pad//2-pad_h:, 0:W_pad//2+pad_w])
+    output4 = model(noisy_frame[:, :, H_pad//2-pad_h:, W_pad//2-pad_w:])
 
-def denoise_seq_fastdvdnet(seq, noise_std, model_temporal, temp_psz=7): #CHANGED FOR NEW ARCHITECTURE
-	r"""Denoises a sequence of frames with FastDVDnet.
+    # Stitch quadrants back together
+    output[..., 0:H_pad//2, 0:W_pad//2] = output1[..., 0:-pad_h, 0:-pad_w]
+    output[..., 0:H_pad//2, W_pad//2:]  = output2[..., 0:-pad_h, pad_w:]
+    output[..., H_pad//2:, 0:W_pad//2]  = output3[..., pad_h:, 0:-pad_w]
+    output[..., H_pad//2:, W_pad//2:]   = output4[..., pad_h:, pad_w:]
 
-	Args:
-		seq: Tensor. [numframes, C, H, W] array containing the noisy input frames (Note: docstring previously said [numframes, 1, C, H, W])
-		noise_std: Tensor. Scalar tensor representing the standard deviation of the added noise (e.g., torch.tensor([0.1])).
-		temp_psz: size of the temporal patch, should match model_temporal.num_input_frames.
-		model_temporal: instance of the PyTorch model of the temporal denoiser (FastDVDnet).
-	Returns:
-		denframes: Tensor, [numframes, C, H, W]
-	"""
-	# init arrays to handle contiguous frames and related patches
+    # Remove padding to original size
+    if expanded_h:
+        output = output[:, :, :-expanded_h, :]
+    if expanded_w:
+        output = output[:, :, :, :-expanded_w]
 
-	numframes, C, H, W = seq.shape # C is num_color_ch
-	ctrlfr_idx = int((temp_psz-1)//2)
-	inframes = list()
-	denframes = torch.empty((numframes, C, H, W)).to(seq.device)
+    return torch.clamp(output, 0., 1.)
 
-	# build noise_map_bundle from noise_std --- assuming Gaussian noise
-	# model_temporal is an instance of FastDVDnet
-	# noise_std is a scalar tensor like torch.tensor([value])
-	
-	# Get model properties for noise map bundle construction
-	# temp_psz is the number of frames in the input patch to the model
-	model_input_frames = temp_psz 
-	model_noise_ch_per_frame = model_temporal.noise_ch_per_frame_in_bundle
-	num_total_noise_bundle_channels = model_input_frames * model_noise_ch_per_frame
-	
-	# Ensure noise_std is correctly shaped for broadcasting (e.g., from torch.tensor([v]) to torch.tensor([[[[v]]]]))
-	noise_std_reshaped = noise_std.view(1, 1, 1, 1) 
-	
-	# noise_map_bundle will be passed to model_temporal via temp_denoise
-	# It should have dimensions [1, num_total_noise_bundle_channels, H, W]
-	# This assumes the same noise_std applies to all channels in the bundle.
-	noise_map_bundle = noise_std_reshaped.expand((1, num_total_noise_bundle_channels, H, W))
 
-	for fridx in range(numframes):
-		# load input frames
-		if not inframes:
-		# if list not yet created, fill it with temp_patchsz frames
-			for idx in range(temp_psz):
-				relidx = abs(idx-ctrlfr_idx) # handle border conditions, reflect
-				inframes.append(seq[relidx])
-		else:
-			del inframes[0]
-			relidx = min(fridx + ctrlfr_idx, -fridx + 2*(numframes-1)-ctrlfr_idx) # handle border conditions
-			inframes.append(seq[relidx])
-               
-		# inframes_t is [1, temp_psz * C, H, W]
-		inframes_t = torch.stack(inframes, dim=0).contiguous().view((1, temp_psz*C, H, W)).to(seq.device)
+def denoise_seq_fastdvdnet(seq, model_temporal, temp_psz=7):
+    """
+    Sequence inference with patch-based tiling and sliding temporal window.
+    Args:
+        seq: [numframes, C, H, W]
+        noise_map: [1, 1, H, W]
+        model_temporal: model that outputs ONE frame
+        temp_psz: temporal window size (odd)
+    Returns:
+        out_frames: [numframes, C, H, W]
+    """
+    numframes, C, H, W = seq.shape
+    ctrlfr_idx = (temp_psz - 1) // 2
+    out_frames = torch.empty((numframes, C, H, W), device=seq.device)
 
-		# append result to output list
-		# Pass the correctly shaped noise_map_bundle to temp_denoise
-		denframes[fridx] = temp_denoise(model_temporal, inframes_t, noise_map_bundle)
+    for fridx in range(numframes):
+        # Build temporal window with reflection padding
+        indices = []
+        for t in range(temp_psz):
+            rel_idx = fridx + t - ctrlfr_idx
+            if rel_idx < 0:
+                rel_idx = -rel_idx  # reflect at start
+            elif rel_idx >= numframes:
+                rel_idx = 2*numframes - rel_idx - 2  # reflect at end
+            indices.append(seq[rel_idx])
 
-	# free memory up
-	del inframes
-	del inframes_t
-	torch.cuda.empty_cache()
+        in_frames_t = torch.stack(indices, dim=0).contiguous()
+        in_frames_t = in_frames_t.view(1, temp_psz*C, H, W).to(seq.device)
+        
+        out_frame = temp_denoise(model_temporal, in_frames_t)
+        out_frames[fridx] = out_frame.squeeze(0)
 
-	# convert to appropiate type and return
-	return denframes
+    torch.cuda.empty_cache()
+    return out_frames
+
 
 
 def normalize_augment(datain, ctrl_fr_idx=3): #CHANGED FOR NEW AARCHITECTURE

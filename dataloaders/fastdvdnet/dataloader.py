@@ -90,21 +90,7 @@ class DVDDataset(Dataset):
             A.Rotate(limit=(270, 270), interpolation=cv2.INTER_LINEAR, p=1.0),
             A.VerticalFlip(p=1.0)
         ])
-        
-        # Original std was 5.0/255.0 for float images in [0,1] range.
-        # Albumentations GaussNoise var_limit is (variance_min, variance_max).
-        # Variance = std^2.
-        noise_std = 5.0 / 255.0
-        noise_var = noise_std ** 2
-        def add_gaussian_noise(image, **kwargs):
-            noise_std = 5.0 / 255.0
-            noise = np.random.normal(0, noise_std, image.shape).astype(np.float32)
-            return image + noise
-        
-        self.A_add_csnt = A.Compose([
-            A.Lambda(image=add_gaussian_noise, p=1.0)
-        ])
-
+          
 
         self.albumentations_aug_ops = [
             self.A_do_nothing,
@@ -115,11 +101,10 @@ class DVDDataset(Dataset):
             self.A_rot180_flipud,
             self.A_rot270,
             self.A_rot270_flipud,
-            self.A_add_csnt
         ]
         
         self.w_aug = [ # Original weights
-            32, 12, 12, 12, 12, 12, 12, 12, 12,
+            32, 12, 12, 12, 12, 12, 12, 12,
         ]
         # Index for the noise operation (A_add_csnt) in self.albumentations_aug_ops
         self.noise_op_idx = 8

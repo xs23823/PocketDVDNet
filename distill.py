@@ -13,6 +13,7 @@ from tqdm.auto import tqdm
 import torchvision
 
 # Import necessary modules
+from noise import NoiseModel
 from student import PocketDVDnet, PocketDVDnet7
 from student.shiftnet import ShiftNet
 from dataloaders.fastdvdnet import ValDataset, DVDDataset, Sampler
@@ -73,6 +74,9 @@ class OnFlyDistillationTrainer:
         
         # Load checkpoint if exists
         self.load()
+
+        self.noise_model = NoiseModel()
+        self.val_noise_model = NoiseModel(seed=1)
     
     def _init_models(self):
         """init teacher and student models"""
@@ -195,7 +199,7 @@ class OnFlyDistillationTrainer:
             self.criterion = nn.MSELoss(reduction='sum')
         
         # Setup mixed precision training
-        self.scaler = torch.cuda.amp.GradScaler()
+        self.scaler = torch.amp.GradScaler('cuda')
         
         # Distillation alpha (weight between teacher and GT targets)
         self.distill_alpha = getattr(self.args, 'distill_alpha', 0.5)
@@ -275,17 +279,15 @@ class OnFlyDistillationTrainer:
             noisy_vis = torchvision.utils.make_grid(noisy_center[0:1].cpu().clamp(0, 1), normalize=False)
             teacher_vis = torchvision.utils.make_grid(teacher_output[0:1].cpu().clamp(0, 1), normalize=False)
             student_vis = torchvision.utils.make_grid(student_output[0:1].cpu().clamp(0, 1), normalize=False)
-            gt_vis = torchvision.utils.make_grid(gt[0:1].cpu().clamp(0, 1), normalize=False)
             
             # Log individual images
             self.writer.add_image(f'{prefix}/Clean_Input', clean_vis, iteration)
             self.writer.add_image(f'{prefix}/Noisy_Input', noisy_vis, iteration)
             self.writer.add_image(f'{prefix}/Teacher_Output', teacher_vis, iteration)
             self.writer.add_image(f'{prefix}/Student_Output', student_vis, iteration)
-            self.writer.add_image(f'{prefix}/Ground_Truth', gt_vis, iteration)
             
             # Create comparison grid
-            comparison = torch.cat([noisy_vis, teacher_vis, student_vis, gt_vis], dim=2)
+            comparison = torch.cat([noisy_vis, teacher_vis, student_vis, clean_vis], dim=2)
             self.writer.add_image(f'{prefix}/Comparison_Noisy_Teacher_Student_GT', comparison, iteration)
             
         except Exception as e:
@@ -348,25 +350,34 @@ class OnFlyDistillationTrainer:
             
             # get input and gt
             img_train, gt_train = batch
+
+
             img_train = img_train.to(self.device)
             gt_train = gt_train.to(self.device)
-            
+
             # add noise
             B, _, H, W = img_train.size()
-            stdn = torch.empty((B, 1, 1, 1)).to(self.device).uniform_(
-                self.args.noise_ival[0], to=self.args.noise_ival[1]
-            )
-            noise = torch.zeros_like(img_train).to(self.device)
-            noise = torch.normal(mean=noise, std=stdn.expand_as(noise))
+            # stdn = torch.empty((B, 1, 1, 1)).to(self.device).uniform_(
+            #     self.args.noise_ival[0], to=self.args.noise_ival[1]
+            # )
+            # noise = torch.zeros_like(img_train).to(self.device)
+            # noise = torch.normal(mean=noise, std=stdn.expand_as(noise))
             
-            imgn_train = img_train + noise
+            # imgn_train = img_train + noise
+            # print("Clean input shape:", img_train.shape, "min:", img_train.min().item(), "max:", img_train.max().item())
+            imgn_train, noise_map = self.noise_model(img_train)
+            # print("Noisy input shape:", imgn_train.shape, "min:", imgn_train.min().item(), "max:", imgn_train.max().item())
+            # print("Noise map shape:", noise_map.shape, "min:", noise_map.min().item(), "max:", noise_map.max().item())
+            imgn_train = imgn_train.reshape(B, self.sequence_length * 3, H, W)
             
             # Prepare noise maps for both models
             # For student (PocketDVDnet) - expects [B, sequence_length*3, H, W] noise map
-            student_noise_map = stdn.expand((B, self.sequence_length * 3, H, W)).to(self.device)
+            # student_noise_map = stdn.expand((B, self.sequence_length * 3, H, W)).to(self.device)
+            # student_noise_map = noise_map.repeat(1, 1, 3, 1, 1).view(B, self.sequence_length * 3, H, W).to(self.device)
             
-            # For teacher (ShiftNet) - expects [B, 1, H, W] noise map
-            teacher_noise_map = stdn.expand((B, 1, H, W)).to(self.device)
+            # # For teacher (ShiftNet) - expects [B, 1, H, W] noise map
+            # teacher_noise_map = stdn.expand((B, 1, H, W)).to(self.device)
+            teacher_noise_map = noise_map[:, 0, :, :, :].view(B, 1, H, W).to(self.device)
             
             # forward pass
             self.optimizer.zero_grad()
@@ -377,14 +388,14 @@ class OnFlyDistillationTrainer:
                     teacher_output = self.teacher(imgn_train, teacher_noise_map)
                 
                 # get student output
-                student_output = self.student(imgn_train, student_noise_map)
+                student_output = self.student(imgn_train)
                 
                 # calc losses
                 teacher_loss = self.criterion(student_output, teacher_output) / (B * 2)
                 gt_loss = self.criterion(student_output, gt_train) / (B * 2)
                 
                 # Combined loss with weighting
-                loss = self.distill_alpha * teacher_loss + (1 - self.distill_alpha) * gt_loss
+                loss = (self.distill_alpha * gt_loss) + teacher_loss
             
             # Backpropagation
             self.scaler.scale(loss).backward()
@@ -407,7 +418,6 @@ class OnFlyDistillationTrainer:
                 self.writer.add_scalar('Train/Teacher_PSNR', teacher_psnr.item(), self.iteration)
                 self.writer.add_scalar('Train/Student_PSNR', student_psnr.item(), self.iteration)
                 self.writer.add_scalar('Train/Student_vs_Teacher_PSNR', teacher_vs_student_psnr.item(), self.iteration)
-                self.writer.add_scalar('Train/Noise_Std', stdn.mean().item(), self.iteration)
                 
                 # Log images every 100 iterations for first few epochs or every 1000 iterations later
                 log_freq = 100 if self.epoch <= 5 else 1000
@@ -443,22 +453,13 @@ class OnFlyDistillationTrainer:
         
         with torch.no_grad():
             for i, seq_val in enumerate(tqdm(self.val_loader, leave=False, desc="Validating")):
-                # Add noise for validation
-                noise = torch.FloatTensor(seq_val.size()).normal_(
-                    mean=0, std=self.args.val_noiseL
-                )
-                seqn_val = seq_val + noise
-                seqn_val = seqn_val.to(self.device, non_blocking=True)
-                seq_val = seq_val.to(self.device, non_blocking=True)
-                
-                # Prepare noise standard deviation tensor
-                sigma_noise = torch.tensor(
-                    [self.args.val_noiseL], dtype=torch.float32, device=self.device
-                )
-                
+
+                B, F, C, H, W = seq_val.size()
+
+                seqn_val, noise_map = self.val_noise_model(seq_val.view(B, F * C, H, W).to(self.device))
                 # Perform denoising
                 out_val = denoise_seq_fastdvdnet(
-                    seq=seqn_val[0], noise_std=sigma_noise, model_temporal=self.student
+                    seq=seqn_val[0], model_temporal=self.student
                 )
                 
                 # Calculate PSNR
@@ -467,33 +468,31 @@ class OnFlyDistillationTrainer:
                 
                 # Log validation images for first batch only
                 if i == 0 and not validation_logged and self.writer is not None:
-                    try:
-                        # Get center frame for visualization
-                        F, C, H, W = out_val.shape
-                        center_idx = F // 2
-                        
-                        # Create visualization tensors
-                        clean_center = seq_val.squeeze_()[center_idx:center_idx+1]  # [1, C, H, W]
-                        noisy_center = seqn_val.squeeze_()[center_idx:center_idx+1].cpu()  # [1, C, H, W]
-                        denoised_center = out_val[center_idx:center_idx+1]  # [1, C, H, W]
-                        
-                        # Make grids for visualization
-                        clean_vis = torchvision.utils.make_grid(clean_center.cpu().clamp(0, 1), normalize=False)
-                        noisy_vis = torchvision.utils.make_grid(noisy_center.clamp(0, 1), normalize=False)
-                        denoised_vis = torchvision.utils.make_grid(denoised_center.clamp(0, 1), normalize=False)
-                        
-                        # Log validation images
-                        self.writer.add_image('Validation/Clean', clean_vis, self.epoch)
-                        self.writer.add_image('Validation/Noisy', noisy_vis, self.epoch)
-                        self.writer.add_image('Validation/Student_Denoised', denoised_vis, self.epoch)
-                        
-                        # Create comparison
-                        comparison = torch.cat([noisy_vis, denoised_vis, clean_vis], dim=2)
-                        self.writer.add_image('Validation/Comparison_Noisy_Denoised_Clean', comparison, self.epoch)
-                        
-                        validation_logged = True
-                    except Exception as e:
-                        print(f"Warning: Failed to log validation images: {e}")
+                    # Get center frame for visualization
+                    F, C, H, W = out_val.shape
+                    center_idx = F // 2
+                    
+                    # Create visualization tensors
+                    clean_center = seq_val.squeeze_()[center_idx:center_idx+1]  # [1, C, H, W]
+                    noisy_center = seqn_val.squeeze_()[center_idx:center_idx+1].cpu()  # [1, C, H, W]
+                    denoised_center = out_val[center_idx:center_idx+1].cpu()  # [1, C, H, W]
+                    
+                    # Make grids for visualization
+                    clean_vis = torchvision.utils.make_grid(clean_center.cpu().clamp(0, 1), normalize=False)
+                    noisy_vis = torchvision.utils.make_grid(noisy_center.clamp(0, 1), normalize=False)
+                    denoised_vis = torchvision.utils.make_grid(denoised_center.clamp(0, 1), normalize=False)
+                    
+                    # Log validation images
+                    self.writer.add_image('Validation/Clean', clean_vis, self.epoch)
+                    self.writer.add_image('Validation/Noisy', noisy_vis, self.epoch)
+                    self.writer.add_image('Validation/Student_Denoised', denoised_vis, self.epoch)
+                    
+                    # Create comparison
+                    comparison = torch.cat([noisy_vis, denoised_vis, clean_vis], dim=2)
+                    self.writer.add_image('Validation/Comparison_Noisy_Denoised_Clean', comparison, self.epoch)
+                    
+                    validation_logged = True
+    
         
         psnr_val /= len(self.val_loader)
         t2 = time.time()
@@ -514,7 +513,6 @@ class OnFlyDistillationTrainer:
         tqdm.write(status_msg)
 
 def main():
-    print("Starting on-the-fly distillation script...")
     # Parse arguments
     parser = argparse.ArgumentParser(description="On-the-fly Distillation Training with ShiftNet")
     parser.add_argument("--config", type=str, default="./configs/distill_onfly.yaml", help="path to config file")
@@ -536,9 +534,7 @@ def main():
         args.noise_ival[1] /= 255.
     
     # Create trainer and start training
-    print("Creating on-the-fly distillation trainer...")
     trainer = OnFlyDistillationTrainer(args)
-    print("Starting training process...")
     trainer.train()
     print("Training complete!")
 
