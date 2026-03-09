@@ -1,42 +1,35 @@
-# configs/distill_precomputed.yaml
+# Configuration for on-the-fly distillation with ShiftNet as teacher
 
-# configuration for distillation with precomputed pacnet outputs
-batch_size: 7
+sequence_length: 5  # Number of frames in sequence (5 or 7)
+
+# Basic training settings
+batch_size: 32
 patch_size: 160
 test_batch_size: 1000
-epochs: 14
-lr: 0.001 # lower lr for fine-tuning
-gamma: 0.1
-noise_ival: [5, 55]  # not used in distillation
-val_noiseL: 50
-
-no_accel: false
-dry_run: false
+iterations: 100000
+lr: 0.001 # Initial learning rate for distillation
+noise_ival: [45, 55]  # Noise range for training
+val_noiseL: 50       # Fixed noise level for validation
 seed: 42
 
-# paths to precomputed data
-noisy_dir: "/home/imogend/Documents/Extra bits/Pacnet/PaCNet-denoiser/teacher_precomputed/noisy_50"
-teacher_dir: "/home/imogend/Documents/Extra bits/Pacnet/PaCNet-denoiser/teacher_precomputed/denoised_50"
-gt_dir: "/home/imogend/Documents/Extra bits/Pacnet/PaCNet-denoiser/train2"
-
-out_dir: "/home/imogend/Documents/Data/out_distill"
-valset_dir: "/home/imogend/Documents/Data/DAVIS 420p JPEG VAL"
-
-iterations: 100000
+# Paths
+trainset_dir: "./data/train"  # Dataset path (MSE config)
+valset_dir: "./data/DAVIS_val"
+out_dir: "./results/distill"
+teacher_checkpoint: "./Shift-Net/net_denoise.pth"
+# Training configuration
 num_workers: 4
 num_prefetch_queue: 8
 log_freq: 10
+val_freq: 500
 
+# Learning rate scheduler
 scheduler:
   name: "StepLR"
-  step_size: 30
+  step_size: 20
   gamma: 0.6
 
-# distillation settings
-use_distillation: true
-distill_alpha: 0.4  # weight for teacher loss (0.8 teacher, 0.2 gt)
-loss_type: "charbonnier"  # or "l1" or "charbonnier"
-
-reset_lr: true
-use_obproxsg: false
-sequence_length: 7
+# Distillation settings
+distill_alpha: 0.5 # Weight for teacher loss (0.4 teacher, 0.6 gt)
+loss_type: "charbonnier"  # or "l1"
+sequence_length: 7  # or 5, depending on the model

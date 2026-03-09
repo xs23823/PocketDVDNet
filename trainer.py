@@ -126,9 +126,8 @@ class Trainer:
         self.writer = SummaryWriter(self.log_dir)
         # enable tensorboard
 
-
         # noise model
-        self.noise_fn = NoiseModel("./dataloaders/predicted_labels.csv")
+        self.noise_fn = NoiseModel(dict_path="./dataloaders/predicted_labels.csv", num_frames=self.sequence_length)
 
     def setup_criterion(self):
         """setup loss function based on config"""

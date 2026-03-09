@@ -1,5 +1,6 @@
 
 # Configuration for pruning FastDVDNet
+sequence_length: 5  # Number of input frames (5 or 7)
 batch_size: 64    
 patch_size: 96
 test_batch_size: 1000  
@@ -14,9 +15,9 @@ dry_run: false
 
 seed: 1        
 
-out_dir: "/home/imogend/Documents/Data/out_extra_data"
-valset_dir: "/home/imogend/Documents/Data/DAVIS 420p JPEG VAL"
-trainset_dir: "/home/imogend/Documents/Data/PNG_TRAINING_SEQUENCES"
+out_dir: "./results/obproxsg"
+valset_dir: "./data/DAVIS_val"
+trainset_dir: "./data/train"
 iterations: 270000
 num_workers: 12
 num_prefetch_queue: 16
@@ -32,7 +33,7 @@ use_obproxsg: true
 lambda_reg: 0.09
 epochSize: 10
 Np: 2
-"No": "inf" # - careful as yaml interprets No as a bool lol 
+"No": "inf" 
 eps: 0.001
 weight_decay: 0
 reset_lr: true

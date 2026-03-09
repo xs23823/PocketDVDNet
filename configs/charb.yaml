@@ -1,4 +1,5 @@
 # Configuration for pocketdvdnet
+sequence_length: 5  # Number of input frames (5 or 7)
 batch_size: 64    
 patch_size: 160
 test_batch_size: 1000  
@@ -13,9 +14,9 @@ dry_run: false
 
 seed: 1        
 
-out_dir: "/home/imogend/Documents/Data/out_7_charb"
-valset_dir:  "/home/imogend/Documents/Data/DAVIS 420p JPEG VAL"
-trainset_dir: "/home/imogend/Documents/Extra bits/Pacnet/PaCNet-denoiser/train"
+out_dir: "./results/charb"
+valset_dir:  "./data/DAVIS_val"
+trainset_dir: "./data/train"
 iterations: 40000   
 num_workers: 6
 num_prefetch_queue: 16

@@ -5,10 +5,8 @@ import argparse
 from trainer import Trainer
 from utils.prefetcher import PrefetchDataLoader, CPUPrefetcher
 
-# Replace specific model import with general student import
-from student import PocketDVDnet, PocketDVDnet7
-from dataloaders.fastdvdnet import ValDataset
-from dataloaders.distill_dataloader import DistillationDataset
+from models import PocketDVDnet, PocketDVDnet7
+from dataloaders.fastdvdnet import ValDataset, DVDDataset
 
 
 def main(args):
@@ -25,31 +23,15 @@ def main(args):
     sequence_length = getattr(args, 'sequence_length', 5)  # Default to 5 if not specified
     print(f"Using sequence length: {sequence_length}")
 
-    # validation dataset (unchanged)
+    # validation dataset 
     val_dataset = ValDataset(valsetdir=args.valset_dir, gray_mode=False, num_input_frames=sequence_length)
     
-    # training dataset
-    if getattr(args, 'use_distillation', False):
-        print("loading distillation dataset with precomputed outputs")
-        train_dataset = DistillationDataset(
-            noisy_dir=args.noisy_dir,
-            teacher_dir=args.teacher_dir,
-            gt_dir=args.gt_dir,
-            sequence_length=sequence_length,
-            ctrl_fr_idx=sequence_length // 2,  # Center frame
-            crop_size=args.patch_size
-        )
-    else:
-        # original training dataset setup
-        from dataloaders.fastdvdnet import DVDDataset, Sampler
-        dvd = DVDDataset(
-            root_dir=args.trainset_dir,
-            sequence_length=sequence_length,
-            ctrl_fr_idx=sequence_length // 2,  # Center frame
-            crop_size=args.patch_size,
-        )
-        # additional datasets if needed
-        train_dataset = dvd
+    train_dataset = DVDDataset(
+        root_dir=args.trainset_dir,
+        sequence_length=sequence_length,
+        ctrl_fr_idx=sequence_length // 2,
+        crop_size=args.patch_size,
+    )
 
     # loaders
     val_loader = torch.utils.data.DataLoader(
@@ -103,7 +85,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--config",
         type=str,
-        default="./configs/adam.yaml",
+        default="./configs/charb.yaml",
         help="path to YAML config file",
     )
     args = parser.parse_args()

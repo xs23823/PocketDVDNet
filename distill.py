@@ -13,9 +13,9 @@ from tqdm.auto import tqdm
 import torchvision
 
 # Import necessary modules
-from noise import NoiseModel
-from student import PocketDVDnet, PocketDVDnet7
-from student.shiftnet import ShiftNet
+from dataloaders.noise import NoiseModel
+from models import PocketDVDnet, PocketDVDnet7
+from studfastdvdnet.models.shiftnetwrapper import ShiftNet
 from dataloaders.fastdvdnet import ValDataset, DVDDataset, Sampler
 from utils.prefetcher import PrefetchDataLoader, CPUPrefetcher
 from trainer import CharbonnierLoss
@@ -75,8 +75,8 @@ class OnFlyDistillationTrainer:
         # Load checkpoint if exists
         self.load()
 
-        self.noise_model = NoiseModel()
-        self.val_noise_model = NoiseModel(seed=1)
+        self.noise_model = NoiseModel(dict_path="./dataloaders/predicted_labels.csv", num_frames=self.sequence_length)
+        self.val_noise_model = NoiseModel(dict_path="./dataloaders/predicted_labels.csv", seed=1, num_frames=self.sequence_length)
     
     def _init_models(self):
         """init teacher and student models"""
@@ -293,14 +293,6 @@ class OnFlyDistillationTrainer:
         except Exception as e:
             print(f"Warning: Failed to log images to TensorBoard: {e}")
 
-    def get_lr(self):
-        """Get current learning rate."""
-        return self.optimizer.param_groups[0]["lr"]
-
-    def update_learning_rate(self):
-        """Update learning rate."""
-        self.scheduler.step()
-
     def train(self):
         """Main training loop"""
         print("Starting on-the-fly distillation training...")
@@ -515,7 +507,7 @@ class OnFlyDistillationTrainer:
 def main():
     # Parse arguments
     parser = argparse.ArgumentParser(description="On-the-fly Distillation Training with ShiftNet")
-    parser.add_argument("--config", type=str, default="./configs/distill_onfly.yaml", help="path to config file")
+    parser.add_argument("--config", type=str, default="./configs/distill.yaml", help="path to config file")
     args = parser.parse_args()
     
     # Load config

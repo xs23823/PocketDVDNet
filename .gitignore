@@ -1,6 +1,33 @@
 
+# Data and outputs
 /data
 /out
 /out_best
-*.pyc
+/results
+/logs
+/experiments
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+
+# Models and checkpoints
+*.pth
+*.pt
+*.pth.tar
+*.ckpt
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Submodules
 /Shift-Net

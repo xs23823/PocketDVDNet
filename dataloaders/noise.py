@@ -2,7 +2,6 @@ import torch
 import numpy as np
 import pandas as pd
 import random
-
 class NoiseModel:
     """
     Applies a composite noise model to an input image tensor by adding several types
@@ -11,13 +10,15 @@ class NoiseModel:
     Handles input shape [B, C*F, H, W] with F=7, ensuring noise consistency across F frames.
     """
 
-    def __init__(self, dict_path, seed=-1):
+    def __init__(self, dict_path, seed=-1, num_frames=5):
         """
         Args:
             dict_path (str): Path to CSV with noise parameters.
             seed (int): Random seed for deterministic noise. If -1 or None, uses random seed.
+            num_frames (int): Number of frames packed in the channel dimension (default 7).
         """
-        self.seed = seed
+        self.seed = seed 
+        self.frames = num_frames
         self.actual_labels = {
             "shot_noise": [0, 0.5],
             "read_noise": [0, 0.1],
@@ -126,7 +127,7 @@ class NoiseModel:
         self.noise_dict = self.get_noise_parameters()
         self.noise_dict = self._scale_noise_dict(self.noise_dict)
         B, CF, H, W = x.shape
-        F_frames = 7 #changed for new architecture, was 5
+        F_frames = self.frames
 
         if CF % F_frames != 0:
             raise ValueError(f"Input channel-frame dimension ({CF}) is not divisible by F_frames ({F_frames}).")
