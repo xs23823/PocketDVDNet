@@ -19,9 +19,3 @@ tqdm>=4.62.0
 # Logging & Visualization (optional)
 tensorboardX>=2.5.0
 
-# Development (optional)
-# Uncomment these for development work
-# pytest>=7.0.0
-# black>=22.0.0
-# flake8>=4.0.0
-# ipython>=8.0.0
