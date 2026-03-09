@@ -1,4 +1,4 @@
-# PocketDVDNet - Video Denoising with Knowledge Distillation
+# PocketDVDNet - Realtime Video Denoising for Real Camera Noise
 
 A repository featuring **PocketDVDnet** (student models) trained with knowledge distillation using **ShiftNet** as teacher for efficient video denoising.
 
