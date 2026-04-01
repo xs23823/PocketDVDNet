@@ -1,8 +1,4 @@
 
-## System Requirements
-
-- **Python**: 3.7 or higher 
-
 ### Dataset Structure
 
 ```
@@ -22,15 +18,14 @@
 ```
 
 
-## 4. Initialize Shift-Net Submodule
+## 4. Initialise Shift-Net Submodule
 
-The Shift-Net teacher model is included as a git submodule. If you cloned with `--recursive`, it's already initialized. Otherwise, run:
+The Shift-Net teacher model is included as a git submodule. If you cloned with `--recursive`, it's already there. Otherwise, run:
 
 ```bash
 git submodule update --init --recursive
 ```
 
-This clones the ShiftNet repository into `Shift-Net/` at the repo root.
 
 ## 5. ShiftNet Teacher Model & Checkpoint
 
@@ -43,21 +38,6 @@ This clones the ShiftNet repository into `Shift-Net/` at the repo root.
 # Option 2: Update the config file
 # Edit configs/distill.yaml and change:
 teacher_checkpoint: "./path/to/your/checkpoint.pth"
-```
-
-If you don't have a pre-trained ShiftNet checkpoint:
-1. Train ShiftNet separately (see [Shift-Net repository](https://github.com/dasongli1/Shift-Net))
-2. Use standard training (`run.py`) instead of distillation
-
-## 6. Configuration Files
-
-Config files in `configs/` use relative paths:
-
-```yaml
-trainset_dir: "./data/train"          # Training dataset
-valset_dir: "./data/DAVIS_val"        # Validation dataset
-out_dir: "./results/charb"            # Output checkpoints
-teacher_checkpoint: "./Shift-Net/net_denoise.pth"  # Teacher model (distill only)
 ```
 
 ## Quick Start
