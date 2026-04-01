@@ -1,17 +1,13 @@
 # PocketDVDNet - Realtime Video Denoising for Real Camera Noise
 
-A repository featuring **PocketDVDnet** (student models) trained with knowledge distillation using **ShiftNet** as teacher for efficient video denoising.
-
-## Key Features
-
-- **5-frame and 7-frame PocketDVDnet models** – Lightweight student architectures for real-time denoising
-- **Knowledge Distillation option** – Train with teacher 
-- **Realistic noise model** – Composite shot/read/uniform/row/periodic noise application
+- **5-frame and 7-frame PocketDVDnet models** – Lightweight student architecture.
+- Knowledge Distillation option with shiftnet teacher.
+- Realistic noise model
 
 ### File Structure
 
 ```
-studfastdvdnet/
+Pocketdvdnet/
 ├── run.py                      # Standard training script (Charbonier loss)
 ├── distill.py                  # Knowledge distillation training script
 ├── trainer.py                  # Base Trainer class with core training logic
@@ -21,28 +17,28 @@ studfastdvdnet/
 │   ├── distill.yaml            # Distillation training (5-frame)
 │   └── obproxsg.yaml           # Sparsity pruning (5-frame)
 │
-├── models/                     # Model definitions
+├── models/                     
 │   ├── pocketdvdnet.py         # PocketDVDnet 5-frame student
 │   ├── pocketdvdnet7f.py       # PocketDVDnet7 7-frame student
 │   ├── shiftnet.py             # ShiftNet teacher model
 │   └── fastdvdnet/             # FastDVDnet full model
 │       └── fastdvdnet.py
 │
-├── dataloaders/                # Data loading & preprocessing
+├── dataloaders/               
 │   ├── noise.py                # Composite noise model
 │   ├── predicted_labels.csv    # Noise parameters
 │   └── fastdvdnet/             # Dataset classes
 │       ├── dataloader.py        # DVDDataset, ValDataset
 │       └── utils.py             # batch_psnr, denoise utilities
 │
-├── eval/                       # Evaluation & inference scripts
+├── eval/                       
 │   ├── test_pocket.py          # Test on validation set
 │   └── test_live.py            # Real-time inference on webcam
 │
-├── train_method/               # Optimization algorithms
+├── train_method/               # Optimisation algorithms
 │   └── obproxsg.py             # OBProxSG for sparsity
 │
-├── utils/                      # Utilities
+├── utils/                    
 │   ├── prefetcher.py           # Data prefetching
 │   └── lr_scheduler.py         # Learning rate schedulers
 │
@@ -64,11 +60,7 @@ studfastdvdnet/
 git clone --recursive https://github.com/xs23823/PocketDVDnet.git
 ```
 
-This automatically clones the **Shift-Net** teacher model as a submodule into `Shift-Net/`. If you cloned without `--recursive`, run:
-
-```bash
-git submodule update --init --recursive
-```
+This automatically clones the **Shift-Net** teacher model as a submodule.
 
 ### 2. Install Dependencies
 
@@ -87,7 +79,6 @@ All training is controlled via YAML config files in `configs/`. Key parameters:
 - **valset_dir**: Path to validation dataset
 - **out_dir**: Output directory for checkpoints and logs
 
-Paths are relative and should be set up according to your local structure (see Installation).
 
 ## Models
 
@@ -104,10 +95,10 @@ Paths are relative and should be set up according to your local structure (see I
 ## Noise Model
 
 The composite noise model generates realistic video noise by combining:
-- **Shot noise** (Poisson): Sensor photon noise
-- **Read noise** (Gaussian): Sensor electronics noise
-- **Uniform noise**: Quantization and dithering
-- **Row noise**: Row-dependent noise patterns
-- **Periodic noise**: Periodic artifacts
-
-Configured via `dataloaders/noise.py` with parameters from config files.
+- **Shot noise** 
+- **Read noise** 
+- **Uniform noise**:
+- **Row noise**:
+- **Periodic noise**:
+  
+Configured via `dataloaders/noise.py` 
