@@ -39,6 +39,17 @@ trained PocketDVDNet checkpoints from its latest tree; this local setup restores
 the matching 5-frame checkpoint from the repository's history and converts it to
 a tensor-only state dictionary for safe loading.
 
+### iOS demo
+
+The checkout also includes an iPhone app that runs the trained model on-device
+with a live side-by-side original/denoised camera view. See
+[ios/README.md](ios/README.md) for build instructions. The model is converted
+from the PyTorch checkpoint with `convert_to_coreml.py`:
+
+```bash
+.venv/bin/python convert_to_coreml.py --width 640 --height 360 --noise-sigma 30
+```
+
 ### File Structure
 
 ```
