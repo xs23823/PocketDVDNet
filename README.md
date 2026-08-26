@@ -4,6 +4,41 @@
 - Knowledge Distillation option with shiftnet teacher.
 - Realistic noise model
 
+## Local demo
+
+This checkout includes a macOS/Linux-friendly runner for the trained 5-frame
+model. It automatically uses CUDA, Apple Metal (MPS), or CPU, in that order.
+
+```bash
+# Install (Python 3.12 is recommended)
+UV_CACHE_DIR=.uv-cache uv sync --python 3.12
+
+# Live camera: original on the left, denoised output on the right
+.venv/bin/python local_demo.py
+
+# Reduce the actual processing resolution for a faster preview
+.venv/bin/python local_demo.py --width 640 --height 360
+
+# Process a video without opening a window
+.venv/bin/python local_demo.py \
+  --input /path/to/input.mp4 \
+  --output results/comparison.mp4 \
+  --no-display
+```
+
+Press `q` or Escape in either the preview window or the terminal to stop. Closing
+the preview window and pressing Ctrl-C are also supported.
+
+On macOS, camera resolution settings are only hints and may be ignored by
+AVFoundation or Continuity Camera. The local runner therefore resizes webcam
+frames explicitly and prints both the camera-delivered and processing sizes.
+
+The local checkpoint is expected at
+`pocket_models/pocketdvdnet5_mse_state.pt`. The upstream repository removed the
+trained PocketDVDNet checkpoints from its latest tree; this local setup restores
+the matching 5-frame checkpoint from the repository's history and converts it to
+a tensor-only state dictionary for safe loading.
+
 ### File Structure
 
 ```
