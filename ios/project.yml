@@ -12,9 +12,10 @@ targets:
       - Resources/PocketDVDNet.mlpackage
     settings:
       base:
-        DEVELOPMENT_TEAM: 8P3BX64C4C
         CODE_SIGN_STYLE: Automatic
         CODE_SIGN_IDENTITY: "Apple Development"
+        # Set DEVELOPMENT_TEAM to your own team here or in Xcode before
+        # building on a device.
     info:
       path: Info.plist
       properties:

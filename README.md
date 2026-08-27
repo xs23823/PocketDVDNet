@@ -44,9 +44,11 @@ a tensor-only state dictionary for safe loading.
 The checkout also includes an iPhone app that runs the trained model on-device
 with a live side-by-side original/denoised camera view. See
 [ios/README.md](ios/README.md) for build instructions. The model is converted
-from the PyTorch checkpoint with `convert_to_coreml.py`:
+from the PyTorch checkpoint with `convert_to_coreml.py` (needs the `coreml`
+dependency group, which adds `coremltools` and `pillow`):
 
 ```bash
+UV_CACHE_DIR=.uv-cache uv sync --python 3.12 --group coreml
 .venv/bin/python convert_to_coreml.py --width 640 --height 360 --noise-sigma 30
 ```
 

@@ -6,10 +6,8 @@ import argparse
 import os
 import select
 import sys
-import termios
 import threading
 import time
-import tty
 from collections import deque
 from contextlib import contextmanager
 from pathlib import Path
@@ -21,6 +19,13 @@ import torch
 import torch.nn.functional as functional
 
 from models.pocketdvdnet import PocketDVDnet
+
+try:
+    import termios
+    import tty
+except ImportError:  # Non-POSIX platforms (e.g. Windows) have no termios/tty.
+    termios = None
+    tty = None
 
 
 ROOT = Path(__file__).resolve().parent
@@ -38,7 +43,7 @@ def is_quit_key(key: int) -> bool:
 def terminal_quit_listener() -> Iterator[threading.Event]:
     """Listen for q or Escape in a terminal without requiring Enter."""
     stopped = threading.Event()
-    if os.name != "posix" or not sys.stdin.isatty():
+    if termios is None or not sys.stdin.isatty():
         yield stopped
         return
 
@@ -133,6 +138,8 @@ def denoise_frames(
         raise ValueError(f"Expected {FRAME_COUNT} frames, received {len(frames)}")
 
     height, width = frames[0].shape[-2:]
+    if height < 4 or width < 4:
+        raise ValueError(f"Frames must be at least 4x4 pixels, received {width}x{height}")
     if any(tuple(frame.shape) != tuple(frames[0].shape) for frame in frames):
         raise ValueError("All input frames must have the same dimensions")
 

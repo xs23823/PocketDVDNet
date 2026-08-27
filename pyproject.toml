@@ -20,6 +20,10 @@ dependencies = [
 
 [dependency-groups]
 dev = ["pytest>=8"]
+coreml = [
+    "coremltools>=9.0",
+    "pillow>=10.0",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

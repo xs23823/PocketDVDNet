@@ -87,7 +87,6 @@
 				LastUpgradeCheck = 1430;
 				TargetAttributes = {
 					2AE215DA31E102F9810EF3C7 = {
-						DevelopmentTeam = 8P3BX64C4C;
 						ProvisioningStyle = Automatic;
 					};
 				};
@@ -132,7 +131,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 8P3BX64C4C;
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
@@ -206,7 +204,6 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				DEVELOPMENT_TEAM = 8P3BX64C4C;
 				INFOPLIST_FILE = Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",

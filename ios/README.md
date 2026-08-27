@@ -23,7 +23,8 @@ open PocketDVDNet.xcodeproj
 1. Select your iPhone as the run destination (connect via USB and trust the
    computer if prompted).
 2. Set your signing team: Target → Signing & Capabilities → Team
-   (a free personal team works; apps expire after 7 days).
+   (a free personal team works; apps expire after 7 days). The committed
+   project deliberately leaves the team unset so it works for anyone.
 3. Press Cmd+R to build and run.
 4. Grant camera permission when prompted.
 
