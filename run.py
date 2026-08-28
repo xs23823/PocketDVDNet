@@ -73,11 +73,11 @@ def main(args):
     # trainer
     trainer = Trainer(args, model, prefetcher, val_loader)
     
-    # compile or not
-    if getattr(args, 'use_obproxsg', False):
-        trainer.train()
-    else:
-        torch.compile(trainer.train(), mode="default")
+    # Compile the model, not the result of calling the training loop. Compilation
+    # stays opt-in because it is not consistently beneficial on every backend.
+    if getattr(args, "compile_model", False) and hasattr(torch, "compile"):
+        trainer.model = torch.compile(trainer.model, mode="default")
+    trainer.train()
 
 
 if __name__ == "__main__":

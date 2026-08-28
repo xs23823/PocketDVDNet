@@ -1,0 +1,34 @@
+name: PocketDVDNet
+options:
+  bundleIdPrefix: com.tomd.pocketdvdnet
+  deploymentTarget:
+    iOS: "16.0"
+targets:
+  PocketDVDNet:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - Resources/PocketDVDNet.mlpackage
+    settings:
+      base:
+        CODE_SIGN_STYLE: Automatic
+        CODE_SIGN_IDENTITY: "Apple Development"
+        # Set DEVELOPMENT_TEAM to your own team here or in Xcode before
+        # building on a device.
+    info:
+      path: Info.plist
+      properties:
+        NSCameraUsageDescription: Frames from the camera are denoised on-device to demonstrate PocketDVDNet.
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+schemes:
+  PocketDVDNet:
+    build:
+      targets:
+        PocketDVDNet: all
+    run:
+      config: Debug

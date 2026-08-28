@@ -13,6 +13,9 @@ __pycache__/
 *$py.class
 *.so
 .Python
+.venv/
+.uv-cache/
+.pytest_cache/
 *.egg-info/
 dist/
 build/
